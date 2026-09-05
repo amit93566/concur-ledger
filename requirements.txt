@@ -1,0 +1,15 @@
+# Core service + experiments. Deliberately light: the whole point is that this
+# replicates on a laptop. Opacus lives in requirements-opacus.txt (Phase 3).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+psycopg[binary]==3.2.3
+psycopg-pool==3.2.4
+pydantic==2.10.4
+httpx==0.28.1
+
+# epsilon source (Phase 1, section 7a). If this import fails the service still
+# runs and reports the adapter as unavailable -- see the documented fallback.
+opendp==0.11.1
+
+# results
+pandas==2.2.3

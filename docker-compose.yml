@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ledger
+    # The harness opens up to ~120 concurrent connections through the app pool;
+    # the default max_connections of 100 would serialise them at the database
+    # and quietly destroy the contention the experiment depends on.
+    command: ["postgres", "-c", "max_connections=300"]
+    ports:
+      # Override DB_PORT if the host already runs a native Postgres on 5432.
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # NAMED VOLUME, not a bind mount and not ephemeral. Experiment 4 restarts
+      # the service and checks the data survived; without this there is nothing
+      # to check.
+      - ledger_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ledger"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: .
+      # Use the host network namespace for the RUN steps of the build only.
+      # On WSL2 the host resolver is 10.255.255.254, which is reachable from the
+      # host netns but not from the default bridge, so `pip install` inside the
+      # build cannot resolve pypi.org without this. Harmless elsewhere: it
+      # affects the build only, never the running container's networking.
+      network: host
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/ledger
+      ENFORCE_DB_CONSTRAINT: "${ENFORCE_DB_CONSTRAINT:-true}"
+      NAIVE_RACE_DELAY_MS: "${NAIVE_RACE_DELAY_MS:-0}"
+      POOL_MIN_SIZE: "${POOL_MIN_SIZE:-10}"
+      POOL_MAX_SIZE: "${POOL_MAX_SIZE:-120}"
+      ALLOW_ADMIN_ENDPOINTS: "${ALLOW_ADMIN_ENDPOINTS:-true}"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Required by the crash test: after the process hard-exits in the
+    # reserve->commit gap, Docker brings it back and the invariants are checked
+    # against the surviving ledger.
+    restart: unless-stopped
+
+volumes:
+  ledger_data:
