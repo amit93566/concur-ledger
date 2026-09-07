@@ -17,6 +17,11 @@ services:
       # the service and checks the data survived; without this there is nothing
       # to check.
       - ledger_data:/var/lib/postgresql/data
+    # Without this the database does not come back after a host reboot or a
+    # WSL shutdown, while the app (which has a restart policy) does -- leaving a
+    # published port 8000 with a service behind it that can never finish
+    # starting, because it is blocked resolving `db`.
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ledger"]
       interval: 2s
