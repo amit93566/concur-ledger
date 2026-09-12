@@ -75,11 +75,25 @@ async def one_worker(client, ev, dataset_id, run, idx, cost, strategy, source):
             },
         )
     except Exception as exc:
-        return {"outcome": "error", "detail": str(exc), "ms": 0.0}
+        return {"worker": idx, "outcome": "error", "detail": str(exc), "ms": 0.0}
     ms = (perf_counter() - t0) * 1000
     if resp.status_code in (200, 429):
-        return {"outcome": resp.json()["status"], "ms": ms}
-    return {"outcome": "error", "detail": f"{resp.status_code} {resp.text}", "ms": ms}
+        body = resp.json()
+        return {
+            "worker": idx,
+            "outcome": body["status"],
+            "ms": ms,
+            # What this caller observed when it decided. For `naive` this is the
+            # stale read that explains the breach.
+            "observed_spent": body.get("observed_spent"),
+            "observed_reserved": body.get("observed_reserved"),
+        }
+    return {
+        "worker": idx,
+        "outcome": "error",
+        "detail": f"{resp.status_code} {resp.text}",
+        "ms": ms,
+    }
 
 
 async def run_once(client, args, dataset_id, run, cost, source):
@@ -173,6 +187,7 @@ async def run_once(client, args, dataset_id, run, cost, source):
         "latency_p50_ms": round(statistics.median(lat), 3) if lat else 0.0,
         "latency_max_ms": round(max(lat), 3) if lat else 0.0,
         "_errors": [r.get("detail") for r in results if r["outcome"] == "error"],
+        "_results": results,
     }
 
 
@@ -241,6 +256,9 @@ async def main_async(args):
             for run in range(1, args.runs + 1):
                 row = await run_once(client, args, dataset_id, run, cost, source)
                 rows.append(row)
+                if args.demo:
+                    render_demo_run(row, args, cost)
+                    continue
                 flag = "BREACH" if row["breach"] else "ok    "
                 print(
                     f"run {run:>3}  {flag}  reserved={row['reserved_count']:>3} "
@@ -251,7 +269,8 @@ async def main_async(args):
                 )
                 if row["_errors"]:
                     print(f"        errors: {row['_errors'][:2]}")
-            summarise(rows, args)
+            if not args.demo:
+                summarise(rows, args)
             all_rows.extend(rows)
 
         if len(args.worker_levels) > 1:
@@ -297,6 +316,121 @@ def summarise(rows, args):
         "Empirically observed under the tested conditions above; not a formal proof."
     )
 
+
+# ---------------------------------------------------------------------------
+# demo presentation mode
+#
+# Pure formatting over the same run data the CSV gets -- it computes nothing of
+# its own and asserts nothing the ledger did not report. The budget bar is drawn
+# from the invariants endpoint, and the per-worker trace from the observed reads
+# each caller returned. Its only job is to remove the mental arithmetic between
+# "total=16.000/10.0" and "the cap was breached".
+# ---------------------------------------------------------------------------
+
+BAR_CAP_WIDTH = 36  # characters used to draw the cap; overshoot extends past it
+
+
+def _bar(value, cap, width=BAR_CAP_WIDTH):
+    per_unit = width / cap if cap else 0
+    filled = int(round(value * per_unit))
+    if filled <= width:
+        return "█" * filled + " " * (width - filled) + "│"
+    return "█" * width + "│" + "█" * (filled - width)
+
+
+def render_demo_run(row, args, cost):
+    cap, seeded = args.cap, args.seed_spent
+    headroom = cap - seeded
+    legal = int(headroom // float(cost))
+    results = row["_results"]
+    breach = row["breach"]
+
+    print()
+    print("═" * 72)
+    print(
+        f" STRATEGY {args.strategy.upper():<8}"
+        f"  within_cap CHECK: {'ON' if row['db_constraint_present'] else 'OFF'}"
+        f"  ·  {args.workers} jobs × ε {float(cost)}"
+    )
+    print(
+        f" cap {cap}  │  already spent {seeded}  │  headroom {headroom}"
+        f"  │  only {legal} can legally be granted"
+    )
+    print("═" * 72)
+    print()
+    print(f"  cap    {'├' + '─' * (BAR_CAP_WIDTH - 2) + '┤'} {cap}")
+    print(f"  before {_bar(seeded, cap)} {seeded}   spent")
+    print()
+    print(f"  … firing {args.workers} simultaneous reserves …")
+    print()
+
+    # Order by arrival so the trace reads like a timeline.
+    ordered = sorted(results, key=lambda r: r["ms"])
+    first_read = None
+    for r in ordered[: args.demo_trace]:
+        if r["outcome"] == "error":
+            print(f"  w{r['worker']:<3} ERROR {r.get('detail', '')[:50]}")
+            continue
+        os_, or_ = r.get("observed_spent"), r.get("observed_reserved")
+        mark = ""
+
+        if args.strategy == "naive":
+            # observed = the PRE-write read, so the projection it computed is
+            # exactly the (stale) decision it made.
+            if os_ is None:
+                line = "read(—)"
+            else:
+                projected = os_ + or_ + float(cost)
+                line = (
+                    f"read(spent {os_}, reserved {or_}) → "
+                    f"{projected} ≤ {cap} {'✓' if projected <= cap else '✗'}"
+                )
+                if r["outcome"] == "reserved":
+                    if first_read is None:
+                        first_read = (os_, or_)
+                    elif (os_, or_) == first_read:
+                        mark = "   ← same stale read"
+        else:
+            # observed = the POST-update row from RETURNING. Re-projecting it
+            # would be meaningless arithmetic (and would print things like
+            # "12.0 <= 10.0"); what it actually shows is the committed state the
+            # database evaluated the predicate against.
+            if os_ is None:
+                line = "predicate false at the database"
+            else:
+                line = f"ledger now spent {os_} + reserved {or_} = {os_ + or_} ≤ {cap}"
+
+        action = "RESERVED" if r["outcome"] == "reserved" else "DENIED"
+        print(f"  w{r['worker']:<3} {line} → {action}{mark}")
+    if len(ordered) > args.demo_trace:
+        print(f"  … {len(ordered) - args.demo_trace} more")
+
+    print()
+    total = row["total"]
+    print(f"  after  {_bar(total, cap)} {total}")
+    if breach:
+        # 9 = len("  after  "), the bar's own left offset, so the caret lands
+        # exactly under the cap boundary drawn inside the bar.
+        print(f"{' ' * (BAR_CAP_WIDTH + 9)}^ cap   OVER BY {row['overshoot']}")
+    print()
+
+    if breach:
+        print(f"  ✗ CAP BREACHED   {total} / {cap}   (over by {row['overshoot']})")
+        print(
+            f"    {row['reserved_count']} granted, only {legal} were legal"
+            f"  —  {row['reserved_count'] / max(legal, 1):.1f}× the budget"
+        )
+    else:
+        print(f"  ✓ CAP HELD   {total} / {cap}")
+        print(
+            f"    {row['reserved_count']} granted (exactly the {legal} that fit), "
+            f"{row['denied_count']} denied"
+        )
+    print(
+        f"    all attempts landed within {row['reserved_at_spread_ms']} ms"
+        "  —  the contention was real"
+    )
+    print()
 
 def vs_n(rows, args):
     """Breach rate and overshoot as functions of N -- the Experiment 1 metric."""
@@ -345,6 +479,18 @@ def parse_args():
     )
     p.add_argument("--spec-kind", dest="spec_kind", default="count")
     p.add_argument("--spec-scale", dest="spec_scale", type=float, default=0.5)
+    p.add_argument(
+        "--demo",
+        action="store_true",
+        help="presentation mode: budget bar + per-worker stale-read trace",
+    )
+    p.add_argument(
+        "--demo-trace",
+        dest="demo_trace",
+        type=int,
+        default=8,
+        help="how many workers to show in the demo trace (default 8)",
+    )
     p.add_argument(
         "--sequential",
         action="store_true",

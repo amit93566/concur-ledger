@@ -5,3 +5,4 @@ __pycache__/
 results/figures/
 .DS_Store
 .run/
+results/report.html

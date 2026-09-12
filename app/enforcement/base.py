@@ -45,6 +45,13 @@ class ReserveOutcome:
     replayed: bool = False  # this idempotency key had already been used
     retries: int = 0  # Phase 2 (serializable); always 0 here
     dataset: dict[str, Any] | None = None
+    # Read-only telemetry: the (spent, reserved) this caller actually observed
+    # when it made its decision. For `naive` these are the STALE values behind a
+    # breach, which is what makes the demo trace explanatory rather than just
+    # assertive. Recorded from values already in memory; nothing branches on
+    # them and no extra query is issued.
+    observed_spent: Decimal | None = None
+    observed_reserved: Decimal | None = None
 
 
 ReserveFn = Callable[[AsyncConnectionPool, ReserveRequest], Awaitable[ReserveOutcome]]

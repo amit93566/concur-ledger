@@ -273,6 +273,17 @@ async def reserve(dataset_id: UUID, body: ReserveRequestBody):
         "strategy": outcome.strategy,
         "replayed": outcome.replayed,
         "retries": outcome.retries,
+        # What this caller saw when it decided -- the demo trace reads these.
+        "observed_spent": (
+            float(outcome.observed_spent)
+            if outcome.observed_spent is not None
+            else None
+        ),
+        "observed_reserved": (
+            float(outcome.observed_reserved)
+            if outcome.observed_reserved is not None
+            else None
+        ),
     }
     # A denial is a normal, correct outcome under contention -- 429, not an error.
     return JSONResponse(payload, status_code=429 if outcome.status == "denied" else 200)

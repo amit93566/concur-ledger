@@ -84,7 +84,14 @@ async def reserve_naive(
                 rid = None
         if rid is None:
             return replay(await find_existing(pool, req))
-        return ReserveOutcome(rid, "denied", req.epsilon_cost, "naive")
+        return ReserveOutcome(
+            rid,
+            "denied",
+            req.epsilon_cost,
+            "naive",
+            observed_spent=row["epsilon_spent"],
+            observed_reserved=row["epsilon_reserved"],
+        )
 
     # --- statement 2: a separate transaction, no lock, unconditional write ---
     async with pool.connection() as conn:
@@ -116,4 +123,13 @@ async def reserve_naive(
     if rid is None:
         return replay(await find_existing(pool, req))
 
-    return ReserveOutcome(rid, "reserved", req.epsilon_cost, "naive")
+    return ReserveOutcome(
+        rid,
+        "reserved",
+        req.epsilon_cost,
+        "naive",
+        # The values read in statement 1 -- already stale by the time the write
+        # above landed. This is the evidence of the race, not a cause of it.
+        observed_spent=row["epsilon_spent"],
+        observed_reserved=row["epsilon_reserved"],
+    )

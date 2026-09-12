@@ -85,4 +85,14 @@ async def reserve_atomic(
     if rid is None:
         return replay(await find_existing(pool, req))
 
-    return ReserveOutcome(rid, status, req.epsilon_cost, "atomic")
+    return ReserveOutcome(
+        rid,
+        status,
+        req.epsilon_cost,
+        "atomic",
+        # Post-update values from RETURNING, so unlike `naive` these are never
+        # stale: the database evaluated the predicate against exactly this
+        # version of the row. `None` on a denial, where nothing was returned.
+        observed_spent=updated["epsilon_spent"] if updated else None,
+        observed_reserved=updated["epsilon_reserved"] if updated else None,
+    )

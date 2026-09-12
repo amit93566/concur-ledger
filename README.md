@@ -125,6 +125,9 @@ Individual pieces:
 
 ```bash
 make opendp       # real OpenDP query -> real epsilon -> reserved, committed, enforced
+make demo-breach  # PRESENTATION: visual budget bar + per-worker stale-read trace
+make demo-safe    # PRESENTATION: identical load on atomic, cap holds
+make report       # regenerate results/report.html from the CSVs
 make exp1         # the breach, with breach rate vs N
 make exp1-control # the same naive code, run sequentially -> no breach
 make exp2         # the fix, escalating to N=100

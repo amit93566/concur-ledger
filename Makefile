@@ -50,6 +50,14 @@ exp1:          ## Experiment 1 -- reproduce the breach (naive), breach rate vs N
 	  --cap 10 --seed-spent 6 --cost 2 --workers 2,3,5,10,20,50 --runs 15 \
 	  --out results/exp1_naive_vs_n.csv
 
+demo-breach:   ## DEMO -- the breach, with a visual budget bar and stale-read trace
+	$(PY) experiments/harness_asyncio.py --strategy naive --demo \
+	  --cap 10 --seed-spent 6 --cost 2 --workers 5 --runs 1
+
+demo-safe:     ## DEMO -- identical load on the atomic strategy, cap holds
+	$(PY) experiments/harness_asyncio.py --strategy atomic --demo \
+	  --cap 10 --seed-spent 6 --cost 2 --workers 5 --runs 1
+
 exp1-control:  ## control -- the SAME naive code run sequentially must not breach
 	$(PY) experiments/harness_asyncio.py --strategy naive --sequential \
 	  --cap 10 --seed-spent 6 --cost 2 --workers 5,20 --runs 10 \
@@ -85,6 +93,9 @@ mid-demo:      ## the full mid-term evidence run, in order
 	@$(MAKE) exp2
 	@$(MAKE) exp4
 	@echo "\nmid-term evidence complete -- CSVs in results/"
+
+report:        ## regenerate results/report.html from the CSVs
+	$(PY) experiments/report.py
 
 clean:         ## remove generated results
 	rm -f results/*.csv
