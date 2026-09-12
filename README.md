@@ -18,8 +18,11 @@ Companion documents: `IMPLEMENTATION_PLAN.md` (what to build),
 
 ## Results, reproduced on this machine
 
-All figures below come from `make exp1 exp2 exp4` and are reproducible from
-scripts in `experiments/`.
+**The canonical, always-current view is `make report`** — it regenerates
+`results/report.html` from the CSVs, organized by experiment (1, 2 and 4), so
+no number in it can drift from the evidence. The tables below are a snapshot
+from one such run and will differ in the tails from yours; breach/no-breach
+verdicts are stable, the exact overshoot figures are not.
 
 **Experiment 1 — the breach is real.** Cap 10, seeded at spent 6 (4 of
 headroom), N concurrent reserves of ε=2. Only 2 should ever succeed.

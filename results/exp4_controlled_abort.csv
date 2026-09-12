@@ -1,0 +1,16 @@
+mode,check,invariant,passed,detail
+controlled-abort,I1 holds after aborts,I1,True,total=30.0 cap=100.0
+controlled-abort,I2 no drift after aborts,I2,True,reserved=30.0 records=30.0
+controlled-abort,"budget is HELD, not lost or double-spent",I1,True,30 orphaned holds = 30.0
+controlled-abort,every reservation is in a valid state,I3,True,{'reserved': 30}
+controlled-abort,holds are fully recoverable by release,I2,True,spent=0.0 reserved=0.0
+controlled-abort,I2 holds after recovery,I2,True,
+controlled-abort,retried reserve returns the same reservation,I4,True,
+controlled-abort,retried reserve does not double-hold,I4,True,reserved=1.0 expected=1.0
+controlled-abort,first commit succeeds,I4,True,
+controlled-abort,"second commit is a replay, not a charge",I4,True,
+controlled-abort,I4 charged exactly once,I4,True,spent=1.0 expected=1.0
+controlled-abort,I2 holds after retried commit,I2,True,
+controlled-abort,release of a committed reservation is rejected,I3,True,returned status=committed
+controlled-abort,the ledger is unchanged by the rejected release,I3,True,spent=1.0 reserved=0.0
+controlled-abort,committing more than was held is rejected,I3,True,HTTP 400

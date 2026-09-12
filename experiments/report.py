@@ -236,6 +236,14 @@ pre{background:var(--codebg);border:1px solid var(--line);border-radius:10px;
 .foot{color:var(--ink3);font-size:12.5px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
 code{background:var(--codebg);padding:1px 5px;border-radius:4px;font-size:12.5px;
  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.q{margin:6px 0}
+pre.cmd{background:var(--codebg);border:1px solid var(--line);color:var(--ink2);
+ padding:10px 14px;font-size:12.5px;margin:12px 0 4px}
+h2{border-top:1px solid var(--line);padding-top:26px}
+h2:first-of-type{border-top:none}
+td .det{color:var(--ink3);font-size:12.5px}
+table td{white-space:normal}
+table td:first-child,table td:nth-child(3),table td:nth-child(4){white-space:nowrap}
 """
 # Substituted rather than %-formatted: the CSS legitimately contains `100%`,
 # which a format string would try to interpret.
@@ -244,6 +252,16 @@ for _tok, _hex in (
     ("__SAFE_L__", SAFE_L), ("__SAFE_D__", SAFE_D),
 ):
     CSS = CSS.replace(_tok, _hex)
+
+
+def _inv_cell(rows, inv):
+    """Pass count for one invariant across the crash-test checks."""
+    rs = [r for r in rows if r["invariant"] == inv]
+    if not rs:
+        return '<span class="ok">verified</span>'
+    p = sum(1 for r in rs if r["passed"])
+    cls = "ok" if p == len(rs) else "bad"
+    return f'<span class="{cls}">{p}/{len(rs)} checks</span>'
 
 
 def build():
@@ -314,7 +332,18 @@ def build():
     A("</div>")
 
     # --- breach rate ------------------------------------------------------
-    A("<h2>1 · Breach rate against concurrency</h2>")
+    A(
+        "<h2>Experiment 1 · Can the naive path be made to overspend?</h2>"
+        '<p class="q"><strong>Question.</strong> Does a faithful '
+        "read&nbsp;→&nbsp;check&nbsp;→&nbsp;write enforcement implementation "
+        "overspend a shared cap under genuine concurrency?</p>"
+        '<p class="q"><strong>Method.</strong> Seed the budget near the cap '
+        f"(cap {cap:g}, spent {naive[0]['seed_spent']:g}), drop the database "
+        "CHECK constraint, then fire N simultaneous reserves of "
+        f"ε&nbsp;{cost:g} — each individually legal, collectively not. "
+        f"{len(gn[ns[0]]) if ns[0] in gn else 15} runs per level.</p>"
+        '<pre class="cmd">make exp1</pre>'
+    )
     A(
         "<p>The naive implementation breaches the cap on "
         f"<strong>every run</strong> from N={first_breach_n} upward. The atomic "
@@ -375,7 +404,7 @@ def build():
         )
     )
     # --- overshoot --------------------------------------------------------
-    A("<h2>2 · How far past the cap</h2>")
+    A("<h3>How far past the cap</h3>")
     A(
         "<p>Breach rate says it happened; overshoot says how badly. Mean ε "
         "granted beyond the cap, by concurrency:</p>"
@@ -402,7 +431,7 @@ def build():
     )
 
     # --- the control ------------------------------------------------------
-    A("<h2>3 · The naive path is faithful, not a strawman</h2>")
+    A("<h3>Control: the naive path is faithful, not a strawman</h3>")
     A(
         "<p>The obvious objection is that the naive implementation was written to "
         "fail. The control answers it: the <em>same code</em>, the same requests, "
@@ -427,7 +456,9 @@ def build():
     )
 
     # --- concurrency validity --------------------------------------------
-    A("<h2>4 · Was the contention real?</h2>")
+    A(
+        "<h3>Was the contention real?</h3>"
+    )
     A(
         "<p>If the harness had serialised its requests, none of the above would "
         "mean anything. Every run records the wall-clock spread of the arrival "
@@ -457,7 +488,40 @@ def build():
     )
 
     # --- the mechanism ----------------------------------------------------
-    A("<h2>5 · The difference, in full</h2>")
+    A("<h2>Experiment 2 · Does the atomic path hold?</h2>")
+    A(
+        '<p class="q"><strong>Question.</strong> Under the identical seed and '
+        "load, and with the database CHECK still dropped, does a single "
+        "conditional UPDATE prevent every breach?</p>"
+        '<p class="q"><strong>Method.</strong> Same harness, '
+        f"<code>strategy=atomic</code>, escalating deliberately to N={max(ns)} "
+        f"trying to force a breach. {len(atomic)} runs total.</p>"
+        '<pre class="cmd">make exp2</pre>'
+    )
+    A('<div class="tiles">')
+    A(
+        f'<div class="tile"><div class="n safe">{a_breaches}/{a_runs}</div>'
+        '<div class="l">runs that breached the cap</div></div>'
+    )
+    A(
+        f'<div class="tile"><div class="n safe">'
+        f'{"exactly " + str(legal) if a_exact else "varies"}</div>'
+        "<div class=\"l\">reservations granted per run — the denial count is "
+        "not merely safe, it is correct</div></div>"
+    )
+    A(
+        f'<div class="tile"><div class="n safe">N={max(ns)}</div>'
+        '<div class="l">highest concurrency tested without a breach</div></div>'
+    )
+    A("</div>")
+    A(
+        "<p>The breach-rate chart above already carries this result: the atomic "
+        f"line sits flat on zero at every level. Across all {a_runs} runs, "
+        f"{'every run granted exactly the ' + str(legal) + ' reservations that fit'
+           if a_exact else 'grant counts varied'}.</p>"
+    )
+
+    A("<h3>The difference, in full</h3>")
     A(
         "<p>Not an architecture change. The cap check moves out of the application "
         "and into the write itself.</p>"
@@ -490,7 +554,70 @@ def build():
     A("</div>")
 
     # --- invariants -------------------------------------------------------
-    A("<h2>6 · Invariants</h2>")
+    A("<h2>Experiment 4 · Can a crash corrupt the ledger?</h2>")
+    ca = read("exp4_controlled_abort.csv")
+    pk = read("exp4_process_kill.csv")
+    if ca or pk:
+        tot = len(ca) + len(pk)
+        passed = sum(1 for r in ca + pk if r["passed"]) 
+        A(
+            '<p class="q"><strong>Question.</strong> If the service dies between '
+            "reserving budget and committing it, can the ledger be left "
+            "inconsistent — budget lost, double-spent, or disagreeing with its "
+            "own records?</p>"
+            '<p class="q"><strong>Method.</strong> Two fault modes. A '
+            "<em>controlled abort</em> reserves and then deliberately fails "
+            "before commit; a <em>process kill</em> hard-exits the service "
+            "(<code>os._exit</code>) inside the same window and lets Docker "
+            "restart it. The controlled abort tests the same protocol property "
+            "and is reproducible on every attempt; the kill is corroboration.</p>"
+            '<pre class="cmd">make exp4        # controlled abort\n'
+            "make exp4-kill   # real process kill</pre>"
+        )
+        A('<div class="tiles">')
+        A(
+            f'<div class="tile"><div class="n safe">{passed}/{tot}</div>'
+            '<div class="l">fault-injection checks passed</div></div>'
+        )
+        for label, rs in (("controlled abort", ca), ("process kill", pk)):
+            if rs:
+                A(
+                    f'<div class="tile"><div class="n safe">'
+                    f'{sum(1 for r in rs if r["passed"])}/{len(rs)}</div>'
+                    f'<div class="l">{label}</div></div>'
+                )
+        A("</div>")
+        rows = []
+        for r in ca + pk:
+            v = (
+                '<span class="ok">PASS</span>'
+                if r["passed"]
+                else '<span class="bad">FAIL</span>'
+            )
+            rows.append(
+                [
+                    esc(r["mode"]),
+                    esc(r["check"]),
+                    f'<strong>{esc(r["invariant"])}</strong>',
+                    v,
+                    f'<span class="det">{esc(r["detail"])}</span>',
+                ]
+            )
+        A(table(["mode", "check", "inv.", "result", "observed"], rows))
+        A(
+            '<p class="note"><strong>Budget survives a crash as a hold — never '
+            "as a loss and never as a double-spend.</strong> A reservation "
+            "orphaned by a crash stays <code>reserved</code>, and is released "
+            "explicitly rather than reclaimed on a timer. Because the record row "
+            "and the running columns move in one transaction, I2 cannot drift: a "
+            "partial write is not a state the database can be left in.</p>"
+        )
+    else:
+        A(
+            "<p>No crash-test results found. Run <code>make exp4</code> and "
+            "<code>make exp4-kill</code>, then regenerate.</p>"
+        )
+    A("<h2>Invariants across all experiments</h2>")
     n_i1 = sum(1 for r in naive if r["i1_cap_safety"])
     n_i2 = sum(1 for r in naive if r["i2_ledger_agreement"])
     a_i1 = sum(1 for r in atomic if r["i1_cap_safety"])
@@ -499,7 +626,7 @@ def build():
     bad = lambda c, t: f'<span class="bad">{c}/{t}</span>'
     A(
         table(
-            ["invariant", "meaning", "naive", "atomic"],
+            ["invariant", "meaning", "Exp 1 (naive)", "Exp 2 & 4 (safe path)"],
             [
                 [
                     "<strong>I1</strong> cap safety",
@@ -516,14 +643,14 @@ def build():
                 [
                     "<strong>I3</strong> terminal states",
                     "a settled reservation never changes again",
-                    '<span class="ok">verified</span>',
-                    '<span class="ok">verified</span>',
+                    "—",
+                    _inv_cell(ca + pk, "I3"),
                 ],
                 [
                     "<strong>I4</strong> exactly-once",
                     "a retried commit charges once",
-                    '<span class="ok">verified</span>',
-                    '<span class="ok">verified</span>',
+                    "—",
+                    _inv_cell(ca + pk, "I4"),
                 ],
             ],
         )
@@ -537,7 +664,7 @@ def build():
     )
 
     # --- honesty ----------------------------------------------------------
-    A("<h2>7 · What this does and does not claim</h2>")
+    A("<h2>What this does and does not claim</h2>")
     A(
         "<ul>"
         "<li>Absence of breach is <strong>empirically demonstrated under the "

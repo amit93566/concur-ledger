@@ -1,0 +1,15 @@
+mode,check,invariant,passed,detail
+process-kill,process really died and restarted,—,True,"3/3 kills, instance 07475f53 -> 3a39e60f, uptime now 0.148s"
+process-kill,I1 holds after restart,I1,True,
+process-kill,I2 shows no drift after restart,I2,True,reserved=3.0 records=3.0
+process-kill,reservations survived the crash as holds,I3,True,{'reserved': 3}
+process-kill,nothing was committed by a crashed job,I1,True,spent=0.0
+process-kill,retried reserve returns the same reservation,I4,True,
+process-kill,retried reserve does not double-hold,I4,True,reserved=1.0 expected=1.0
+process-kill,first commit succeeds,I4,True,
+process-kill,"second commit is a replay, not a charge",I4,True,
+process-kill,I4 charged exactly once,I4,True,spent=1.0 expected=1.0
+process-kill,I2 holds after retried commit,I2,True,
+process-kill,release of a committed reservation is rejected,I3,True,returned status=committed
+process-kill,the ledger is unchanged by the rejected release,I3,True,spent=1.0 reserved=0.0
+process-kill,committing more than was held is rejected,I3,True,HTTP 400

@@ -24,8 +24,10 @@ primary mode here for exactly that reason; the kill is run as corroboration.
 
 import argparse
 import asyncio
+import csv
 import sys
 import uuid
+from pathlib import Path
 
 import httpx
 
@@ -34,19 +36,30 @@ FAIL = "FAIL"
 
 
 class Checks:
-    def __init__(self):
+    def __init__(self, mode=""):
         self.results = []
+        self.mode = mode
 
-    def record(self, name, ok, detail=""):
-        self.results.append((name, ok, detail))
+    def record(self, name, ok, detail="", invariant=""):
+        self.results.append((name, ok, detail, invariant))
         print(f"  [{PASS if ok else FAIL}] {name}" + (f" -- {detail}" if detail else ""))
         return ok
 
+    def write_csv(self, path):
+        """Machine-readable output so Experiment 4 can appear in the report
+        alongside Experiments 1 and 2, instead of living only in scrollback."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["mode", "check", "invariant", "passed", "detail"])
+            for name, ok, detail, inv in self.results:
+                w.writerow([self.mode, name, inv, ok, detail])
+
     def report(self):
-        failed = [r for r in self.results if not r[1]]
+        failed = [r for r in self.results if not r[1]]  # noqa: E501
         print("\n" + "=" * 68)
         print(f"{len(self.results) - len(failed)}/{len(self.results)} checks passed")
-        for name, _, detail in failed:
+        for name, _, detail, _inv in failed:
             print(f"  FAILED: {name} -- {detail}")
         print("=" * 68)
         return not failed
@@ -97,23 +110,19 @@ async def controlled_abort(client, args, checks):
     checks.record(
         "I1 holds after aborts",
         after["i1_cap_safety"],
-        f"total={after['total']} cap={after['epsilon_cap']}",
-    )
+        f"total={after['total']} cap={after['epsilon_cap']}", invariant="I1")
     checks.record(
         "I2 no drift after aborts",
         after["i2_ledger_agreement"],
-        f"reserved={after['epsilon_reserved']} records={after['records_reserved']}",
-    )
+        f"reserved={after['epsilon_reserved']} records={after['records_reserved']}", invariant="I2")
     checks.record(
         "budget is HELD, not lost or double-spent",
         abs(after["epsilon_reserved"] - len(orphaned) * args.cost) < 1e-9,
-        f"{len(orphaned)} orphaned holds = {after['epsilon_reserved']}",
-    )
+        f"{len(orphaned)} orphaned holds = {after['epsilon_reserved']}", invariant="I1")
     checks.record(
         "every reservation is in a valid state",
         set(after["status_counts"]) <= {"reserved", "committed", "released", "denied"},
-        str(after["status_counts"]),
-    )
+        str(after["status_counts"]), invariant="I3")
 
     # Recovery: an operator (or a reaper) releases the orphaned holds.
     for rid in orphaned:
@@ -122,9 +131,8 @@ async def controlled_abort(client, args, checks):
     checks.record(
         "holds are fully recoverable by release",
         recovered["epsilon_reserved"] == 0 and recovered["epsilon_spent"] == 0,
-        f"spent={recovered['epsilon_spent']} reserved={recovered['epsilon_reserved']}",
-    )
-    checks.record("I2 holds after recovery", recovered["i2_ledger_agreement"])
+        f"spent={recovered['epsilon_spent']} reserved={recovered['epsilon_reserved']}", invariant="I2")
+    checks.record("I2 holds after recovery", recovered["i2_ledger_agreement"], invariant="I2")
 
 
 # ---------------------------------------------------------------------------
@@ -181,26 +189,22 @@ async def process_kill(client, args, checks):
         and after_cfg["uptime_s"] < before["uptime_s"] + 60,
         f"{killed}/{args.runs} kills, instance "
         f"{before['instance_id'][:8]} -> {after_cfg['instance_id'][:8]}, "
-        f"uptime now {after_cfg['uptime_s']}s",
-    )
+        f"uptime now {after_cfg['uptime_s']}s", invariant="—")
 
     after = await inv(client, dataset_id)
-    checks.record("I1 holds after restart", after["i1_cap_safety"])
+    checks.record("I1 holds after restart", after["i1_cap_safety"], invariant="I1")
     checks.record(
         "I2 shows no drift after restart",
         after["i2_ledger_agreement"],
-        f"reserved={after['epsilon_reserved']} records={after['records_reserved']}",
-    )
+        f"reserved={after['epsilon_reserved']} records={after['records_reserved']}", invariant="I2")
     checks.record(
         "reservations survived the crash as holds",
         after["status_counts"].get("reserved", 0) == killed,
-        str(after["status_counts"]),
-    )
+        str(after["status_counts"]), invariant="I3")
     checks.record(
         "nothing was committed by a crashed job",
         after["epsilon_spent"] == 0,
-        f"spent={after['epsilon_spent']}",
-    )
+        f"spent={after['epsilon_spent']}", invariant="I1")
 
 
 # ---------------------------------------------------------------------------
@@ -227,13 +231,11 @@ async def idempotency_checks(client, args, checks):
     state = await inv(client, dataset_id)
     checks.record(
         "retried reserve returns the same reservation",
-        second["reservation_id"] == rid and second.get("replayed") is True,
-    )
+        second["reservation_id"] == rid and second.get("replayed") is True, invariant="I4")
     checks.record(
         "retried reserve does not double-hold",
         state["epsilon_reserved"] == args.cost,
-        f"reserved={state['epsilon_reserved']} expected={args.cost}",
-    )
+        f"reserved={state['epsilon_reserved']} expected={args.cost}", invariant="I4")
 
     c1 = (
         await client.post(f"/reservations/{rid}/commit", json={"actual_cost": args.cost})
@@ -242,17 +244,15 @@ async def idempotency_checks(client, args, checks):
         await client.post(f"/reservations/{rid}/commit", json={"actual_cost": args.cost})
     ).json()
     state = await inv(client, dataset_id)
-    checks.record("first commit succeeds", c1["status"] == "committed")
+    checks.record("first commit succeeds", c1["status"] == "committed", invariant="I4")
     checks.record(
         "second commit is a replay, not a charge",
-        c2["already_settled"] is True and c2["status"] == "committed",
-    )
+        c2["already_settled"] is True and c2["status"] == "committed", invariant="I4")
     checks.record(
         "I4 charged exactly once",
         state["epsilon_spent"] == args.cost,
-        f"spent={state['epsilon_spent']} expected={args.cost}",
-    )
-    checks.record("I2 holds after retried commit", state["i2_ledger_agreement"])
+        f"spent={state['epsilon_spent']} expected={args.cost}", invariant="I4")
+    checks.record("I2 holds after retried commit", state["i2_ledger_agreement"], invariant="I2")
 
     print("\n--- I3: a settled reservation never changes again ---")
     rel = await client.post(f"/reservations/{rid}/release")
@@ -261,13 +261,11 @@ async def idempotency_checks(client, args, checks):
     checks.record(
         "release of a committed reservation is rejected",
         rel_body["status"] == "committed" and rel_body["already_settled"] is True,
-        f"returned status={rel_body['status']}",
-    )
+        f"returned status={rel_body['status']}", invariant="I3")
     checks.record(
         "the ledger is unchanged by the rejected release",
         post["epsilon_spent"] == args.cost and post["epsilon_reserved"] == 0,
-        f"spent={post['epsilon_spent']} reserved={post['epsilon_reserved']}",
-    )
+        f"spent={post['epsilon_spent']} reserved={post['epsilon_reserved']}", invariant="I3")
 
     print("\n--- over-commit is rejected ---")
     key2 = f"over-{uuid.uuid4().hex[:8]}"
@@ -289,8 +287,7 @@ async def idempotency_checks(client, args, checks):
     checks.record(
         "committing more than was held is rejected",
         over.status_code == 400,
-        f"HTTP {over.status_code}",
-    )
+        f"HTTP {over.status_code}", invariant="I3")
     await client.post(f"/reservations/{r2['reservation_id']}/release")
 
 
@@ -300,7 +297,7 @@ async def main_async(args):
         # what keeps the ledger consistent through a crash.
         await client.post("/admin/db-constraint", json={"enabled": False})
 
-        checks = Checks()
+        checks = Checks(mode=args.mode)
         if args.mode in ("controlled-abort", "all"):
             await controlled_abort(client, args, checks)
         if args.mode in ("process-kill", "all"):
@@ -308,6 +305,9 @@ async def main_async(args):
         await idempotency_checks(client, args, checks)
 
         print(f"\nfault-injection method used: {args.mode}")
+        if args.out:
+            checks.write_csv(Path(args.out))
+            print(f"wrote {args.out}")
         ok = checks.report()
         print(
             "Empirically observed under the tested conditions above; not a formal proof."
@@ -327,6 +327,7 @@ def parse_args():
     p.add_argument("--cost", type=float, default=1.0)
     p.add_argument("--strategy", default="atomic", choices=["naive", "atomic"])
     p.add_argument("--base-url", dest="base_url", default="http://localhost:8000")
+    p.add_argument("--out", default=None, help="write per-check results CSV here")
     return p.parse_args()
 
 

@@ -69,10 +69,12 @@ exp2:          ## Experiment 2 -- verify safety (atomic) under escalating conten
 	  --out results/exp2_atomic_vs_n.csv
 
 exp4:          ## Experiment 4 -- controlled abort between reserve and commit
-	$(PY) experiments/crash_test.py --mode controlled-abort --runs 30
+	$(PY) experiments/crash_test.py --mode controlled-abort --runs 30 \
+	  --out results/exp4_controlled_abort.csv
 
 exp4-kill:     ## Experiment 4 -- real process kill in the reserve->commit gap
-	$(PY) experiments/crash_test.py --mode process-kill --runs 3
+	$(PY) experiments/crash_test.py --mode process-kill --runs 3 \
+	  --out results/exp4_process_kill.csv
 
 opendp:        ## real OpenDP query -> real epsilon -> reserved, committed, enforced
 	$(PY) experiments/opendp_demo.py
@@ -92,6 +94,8 @@ mid-demo:      ## the full mid-term evidence run, in order
 	@$(MAKE) exp1-control
 	@$(MAKE) exp2
 	@$(MAKE) exp4
+	@$(MAKE) exp4-kill
+	@$(MAKE) report
 	@echo "\nmid-term evidence complete -- CSVs in results/"
 
 report:        ## regenerate results/report.html from the CSVs
