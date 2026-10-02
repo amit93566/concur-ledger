@@ -48,11 +48,17 @@ def read(name):
     return rows
 
 
-def by_n(rows):
+def by_n_key(rows, key):
+    """Group rows by any column -- `workers` for the N sweeps, and
+    `naive_race_delay_ms` for the race-window sweep, which holds N fixed."""
     g = defaultdict(list)
     for r in rows:
-        g[r["workers"]].append(r)
+        g[r[key]].append(r)
     return dict(sorted(g.items()))
+
+
+def by_n(rows):
+    return by_n_key(rows, "workers")
 
 
 def esc(x):
@@ -79,7 +85,7 @@ def _y(v, vmax):
     return PAD_T + inner * (1 - (v / vmax if vmax else 0))
 
 
-def _frame(labels, vmax, yfmt, ylabel):
+def _frame(labels, vmax, yfmt, ylabel, xlabel="concurrent jobs (N)"):
     inner_b = H - PAD_B
     out = [
         f'<line x1="{PAD_L}" y1="{inner_b}" x2="{W-PAD_R}" y2="{inner_b}" class="axis"/>'
@@ -101,7 +107,7 @@ def _frame(labels, vmax, yfmt, ylabel):
         )
     out.append(
         f'<text x="{W/2:.0f}" y="{H-6}" class="axtitle" text-anchor="middle">'
-        "concurrent jobs (N)</text>"
+        f"{esc(xlabel)}</text>"
     )
     out.append(
         f'<text x="14" y="{PAD_T+(H-PAD_T-PAD_B)/2:.0f}" class="axtitle" '
@@ -111,31 +117,69 @@ def _frame(labels, vmax, yfmt, ylabel):
     return out
 
 
-def line_chart(labels, series, vmax, yfmt, ylabel, cid):
-    """series: [(name, values, css_var, direct_label)]"""
+def line_chart(
+    labels,
+    series,
+    vmax,
+    yfmt,
+    ylabel,
+    cid,
+    xlabel="concurrent jobs (N)",
+    xtip=lambda lab: f"N={lab}",
+):
+    """series: [(name, values, css_var, direct_label)]
+
+    A value of None means NOT MEASURED at that N and is drawn as a gap: no
+    marker, and the polyline breaks either side of it. It must never be
+    coerced to zero. The strategies are swept to different maxima (naive to
+    N=50, atomic to N=100), so a zero-filled naive line would touch 0% at an N
+    it was never run at and read as "naive was safe there" -- the exact
+    opposite of the result.
+    """
     parts = [
         f'<svg viewBox="0 0 {W} {H}" role="img" class="chart" '
-        f'aria-label="{esc(ylabel)} by concurrency">'
+        f'aria-label="{esc(ylabel)} by {esc(xlabel)}">'
     ]
-    parts += _frame(labels, vmax, yfmt, ylabel)
+    parts += _frame(labels, vmax, yfmt, ylabel, xlabel)
     xs = _x_positions(len(labels))
-    for si, (name, vals, var, dlabel) in enumerate(series):
-        pts = " ".join(f"{x:.1f},{_y(v, vmax):.1f}" for x, v in zip(xs, vals))
-        parts.append(f'<polyline points="{pts}" class="ln" style="stroke:var({var})"/>')
+    for name, vals, var, dlabel in series:
+        # Split into runs of consecutive measured points; each becomes its own
+        # polyline so a gap is a gap rather than a straight line drawn over it.
+        seg, segs = [], []
+        for x, v in zip(xs, vals):
+            if v is None:
+                if seg:
+                    segs.append(seg)
+                seg = []
+            else:
+                seg.append((x, v))
+        if seg:
+            segs.append(seg)
+        for s in segs:
+            if len(s) < 2:
+                continue
+            pts = " ".join(f"{x:.1f},{_y(v, vmax):.1f}" for x, v in s)
+            parts.append(
+                f'<polyline points="{pts}" class="ln" style="stroke:var({var})"/>'
+            )
         for i, (x, v) in enumerate(zip(xs, vals)):
+            if v is None:
+                continue
             # 2px surface ring so overlapping markers stay separable
             parts.append(
                 f'<circle cx="{x:.1f}" cy="{_y(v,vmax):.1f}" r="5" '
                 f'style="fill:var({var})" class="mk">'
-                f"<title>{esc(name)} — N={esc(labels[i])}: "
+                f"<title>{esc(name)} — {esc(xtip(labels[i]))}: "
                 f"{yfmt(v)}</title></circle>"
             )
         if dlabel:
-            lx, lv = xs[-1], vals[-1]
-            parts.append(
-                f'<text x="{lx-8:.1f}" y="{_y(lv,vmax)-14:.1f}" class="dlabel" '
-                f'style="fill:var({var})" text-anchor="end">{esc(dlabel)}</text>'
-            )
+            measured = [(x, v) for x, v in zip(xs, vals) if v is not None]
+            if measured:
+                lx, lv = measured[-1]
+                parts.append(
+                    f'<text x="{lx-8:.1f}" y="{_y(lv,vmax)-14:.1f}" class="dlabel" '
+                    f'style="fill:var({var})" text-anchor="end">{esc(dlabel)}</text>'
+                )
     parts.append("</svg>")
     return "".join(parts)
 
@@ -202,6 +246,7 @@ body{background:var(--bg);color:var(--ink);
 h1{font-size:27px;line-height:1.25;margin:0 0 6px;letter-spacing:-.02em}
 h2{font-size:19px;margin:44px 0 6px;letter-spacing:-.01em}
 h3{font-size:15px;margin:22px 0 6px}
+h4{font-size:14px;margin:20px 0 4px;color:var(--ink2);font-weight:650}
 p{color:var(--ink2);margin:8px 0}
 .sub{color:var(--ink3);font-size:13.5px;margin:0 0 8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
@@ -268,15 +313,30 @@ def build():
     naive = read("exp1_naive_vs_n.csv")
     atomic = read("exp2_atomic_vs_n.csv")
     ctrl = read("exp1_naive_sequential_control.csv")
+    # Optional: the single-transaction naive variant. Absent until `make exp1b`
+    # has been run, and the page simply omits its section in that case.
+    txn = read("exp1b_naive_txn_vs_n.csv")
+    # Optional: the race-window sweep (fixed N, varying NAIVE_RACE_DELAY_MS).
+    # Absent until `make exp1c` has run; the plateau then keeps the observational
+    # half and omits the intervention rather than asserting it.
+    win = read("exp1c_race_window_vs_delay.csv")
     if not naive or not atomic:
         raise SystemExit("missing results CSVs -- run `make exp1 exp2` first")
 
-    gn, ga, gc = by_n(naive), by_n(atomic), by_n(ctrl)
+    gn, ga, gc, gt = by_n(naive), by_n(atomic), by_n(ctrl), by_n(txn)
     ns = sorted(set(gn) | set(ga))
     labels = [str(n) for n in ns]
 
     def rate(g, n):
-        return (sum(1 for r in g[n] if r["breach"]) / len(g[n]) * 100) if n in g else 0.0
+        """Breach rate at N, or None if that strategy was never run at that N.
+
+        None, not 0.0: the axis is the union of the naive and atomic sweeps,
+        and naive stops at N=50 while atomic goes to N=100. Zero-filling would
+        plot naive at a 0% breach rate for a run that never happened.
+        """
+        if n not in g:
+            return None
+        return sum(1 for r in g[n] if r["breach"]) / len(g[n]) * 100
 
     nb = [rate(gn, n) for n in ns]
     ab = [rate(ga, n) for n in ns]
@@ -312,6 +372,21 @@ def build():
         f"With a cap of {cap:g} and {naive[0]['seed_spent']:g} already spent, "
         f"exactly <strong>{legal}</strong> reservations of ε&nbsp;{cost:g} fit. "
         "Here is what each enforcement implementation actually granted.</p>"
+    )
+    # ONE NAME FOR THE BUG. The anomaly is called *write skew* here and in
+    # every other artefact (README, summary, bundle, source comments). "read →
+    # check → write" names the code shape and "race window" names the gap in
+    # time -- they are different referents and are never used as a second name
+    # for the anomaly itself.
+    A(
+        '<p class="note"><strong>The name for what goes wrong: write '
+        "skew.</strong> Each request reads the budget, decides its own "
+        "reservation fits, and writes — and every one of those decisions was "
+        "valid against the state it read. The cap is broken only by the "
+        "combination. This page uses <em>write skew</em> throughout for the "
+        "anomaly, <em>read → check → write</em> for the code shape that admits "
+        "it, and <em>race window</em> for the gap between the read and the "
+        "write.</p>"
     )
 
     A('<div class="tiles">')
@@ -377,6 +452,15 @@ def build():
         "both. The naive path only fails once demand genuinely exceeds supply — "
         "which is the point.</p>"
     )
+    naive_max, atomic_max = max(gn), max(ga)
+    if atomic_max > naive_max:
+        A(
+            f'<p class="note">The naive line <strong>stops at N={naive_max}</strong> '
+            f"because that is as far as it was run; the atomic sweep continues to "
+            f"N={atomic_max}. The gap is missing data, not a measured 0% — naive "
+            f"has never been observed to be safe at N&gt;{naive_max}, and the "
+            "chart does not claim it was.</p>"
+    )
 
     rows = []
     for n in ns:
@@ -422,13 +506,185 @@ def build():
     )
     A("</div>")
     A(
-        '<p class="note"><strong>Overshoot is not monotonic in N, and that is the '
-        "correct behaviour.</strong> It peaks in the middle of the range and then "
-        "flattens. Past roughly N=10 a run takes long enough (see §4) that later "
-        "arrivals read a partly-updated row and are legitimately denied — so a "
-        "larger share of requests lose the race they were trying to win. More "
-        "contention does not mean more successful overspending.</p>"
+        '<p class="note"><strong>Overshoot is not monotonic in N.</strong> It '
+        "peaks in the middle of the range and then flattens. The mechanism is no "
+        "longer a guess — it is measured two ways below, and it is not that "
+        "contention stops mattering. The number of callers that win the race "
+        "saturates while N keeps growing.</p>"
     )
+
+    # --- the plateau mechanism, measured ----------------------------------
+    # Was a labelled hypothesis until the read-position columns existed. Both
+    # halves are reported: the observation (window share vs N, from this same
+    # sweep) and the intervention (exp1c, widening the window at fixed N). The
+    # intervention is what makes the claim causal rather than merely consistent.
+    A("<h3>Why it plateaus: the race window, counted</h3>")
+    A(
+        "<p>Every naive caller reports the values it read in statement 1. Because "
+        "each reservation increments <code>epsilon_reserved</code> from a seeded "
+        "zero, that read <em>is</em> a position in the write sequence: read "
+        "<code>reserved&nbsp;=&nbsp;0</code> and no peer's write was visible yet — "
+        "the caller was inside the race window. Read anything above zero and it "
+        "lost the window, and the denial it got was legitimate.</p>"
+    )
+    win_ns = [n for n in ns if n in gn and gn[n][0].get("reads_in_window") not in (None, "")]
+    if win_ns:
+        wshare = [
+            statistics.mean(r["reads_in_window"] for r in gn[n]) / n * 100
+            for n in win_ns
+        ]
+        wgrant = [statistics.mean(r["reserved_count"] for r in gn[n]) for n in win_ns]
+        # The largest N at which the window still holds essentially everyone --
+        # the honest top of the range, rather than N=2, which does not breach.
+        hi_n, hi_share = max(
+            ((n, s) for n, s in zip(win_ns, wshare) if s >= 90),
+            default=(win_ns[0], wshare[0]),
+        )
+        A('<div class="card">')
+        A(
+            '<div class="legend">'
+            '<span><i style="background:var(--naive)"></i>share of callers inside '
+            "the race window</span></div>"
+        )
+        A(
+            line_chart(
+                [str(n) for n in win_ns],
+                [("in window", wshare, "--naive", None)],
+                100,
+                lambda v: f"{v:.0f}%",
+                "callers that read pre-write state",
+                "window",
+            )
+        )
+        A("</div>")
+        A(
+            table(
+                ["N", "read in window", "share of N", "granted", "legal"],
+                [
+                    [
+                        n,
+                        f"{statistics.mean(r['reads_in_window'] for r in gn[n]):.2f}",
+                        f"{s:.0f}%",
+                        f"{g:.2f}",
+                        legal,
+                    ]
+                    for n, s, g in zip(win_ns, wshare, wgrant)
+                ],
+            )
+        )
+        A(
+            f"<p>Nearly every caller is still inside the window at the low levels "
+            f"({hi_share:.0f}% at N={hi_n}); by N={win_ns[-1]} only "
+            f"{wshare[-1]:.0f}% are, while the number granted stays "
+            f"near {statistics.mean(wgrant[-3:]):.1f}. More contention does not "
+            "produce more successful overspending: it produces more callers "
+            "arriving after the writes have already landed, who are then correctly "
+            "denied. The overspend is bounded by how many callers fit inside the "
+            "window, not by how many are competing.</p>"
+        )
+        A(
+            '<p class="note">The sequential control makes the same point from the '
+            "other side: run one at a time, exactly <strong>one</strong> caller "
+            "ever reads pre-write state, and nothing is overspent.</p>"
+        )
+
+    # The intervention: hold N fixed, widen the window itself.
+    gw = by_n_key(win, "naive_race_delay_ms")
+    if gw:
+        wn = win[0]["workers"]
+        ds = sorted(gw)
+        A("<h4>The intervention: widen the window and every caller wins</h4>")
+        A(
+            "<p>Observation alone cannot show the window is the <em>cause</em>. "
+            f"So: hold N fixed at {wn} and vary the window directly with "
+            "<code>NAIVE_RACE_DELAY_MS</code>, an artificial pause between the "
+            "read and the write standing in for whatever work a real service does "
+            "there. Nothing else changes.</p>"
+            '<pre class="cmd">make exp1c</pre>'
+        )
+        ceiling = naive[0]["seed_spent"] + wn * cost - cap
+        A('<div class="card">')
+        A(
+            line_chart(
+                [f"{d:g}" for d in ds],
+                [
+                    (
+                        "in window",
+                        [
+                            statistics.mean(r["reads_in_window"] for r in gw[d])
+                            / wn
+                            * 100
+                            for d in ds
+                        ],
+                        "--naive",
+                        "in window",
+                    ),
+                    (
+                        "granted",
+                        [
+                            statistics.mean(r["reserved_count"] for r in gw[d])
+                            / wn
+                            * 100
+                            for d in ds
+                        ],
+                        "--safe",
+                        "granted",
+                    ),
+                ],
+                100,
+                lambda v: f"{v:.0f}%",
+                f"share of the {wn} callers",
+                "window-delay",
+                xlabel="artificial race-window width (ms)",
+                xtip=lambda lab: f"delay {lab}ms",
+            )
+        )
+        A("</div>")
+        A(
+            table(
+                [
+                    "delay (ms)",
+                    "runs",
+                    "read in window",
+                    "granted",
+                    "mean overshoot",
+                    "breach",
+                ],
+                [
+                    [
+                        f"{d:g}",
+                        len(gw[d]),
+                        f"{statistics.mean(r['reads_in_window'] for r in gw[d]):.2f}"
+                        f" / {wn}",
+                        f"{statistics.mean(r['reserved_count'] for r in gw[d]):.2f}",
+                        f"{statistics.mean(r['overshoot'] for r in gw[d]):.2f}",
+                        f'<span class="bad">'
+                        f"{sum(1 for r in gw[d] if r['breach'])/len(gw[d]):.0%}</span>",
+                    ]
+                    for d in ds
+                ],
+            )
+        )
+        A(
+            f"<p>Monotonic, and it saturates where the arithmetic says it must: at "
+            f"{max(ds):g}&nbsp;ms every one of the {wn} callers reads pre-write "
+            f"state, every one is granted, and the overshoot reaches "
+            f"ε&nbsp;{ceiling:g} — the most that {wn} reservations of "
+            f"ε&nbsp;{cost:g} can overspend a cap of {cap:g} seeded at "
+            f"{naive[0]['seed_spent']:g}. <strong>The plateau is therefore a "
+            "property of the window, not of the concurrency.</strong> At "
+            "<code>delay=0</code> the window is narrower than the spread of "
+            "arrivals, so most callers miss it; widen it past the spread and the "
+            "breach is total.</p>"
+        )
+        A(
+            '<p class="note"><strong>What this does not license.</strong> The '
+            "delay is an instrument, not a claim about production timings — it "
+            "stands in for application work whose real duration is unmeasured "
+            "here. What is established is the direction and the ceiling: window "
+            "width sets how much can be overspent, and the breach conclusion at "
+            "<code>delay=0</code> needs no instrument at all.</p>"
+        )
 
     # --- the control ------------------------------------------------------
     A("<h3>Control: the naive path is faithful, not a strawman</h3>")
@@ -454,6 +710,69 @@ def build():
         "only concurrency breaks it. That is what makes it a plausible first "
         "implementation rather than a sabotaged one.</p>"
     )
+
+    # --- second control: the transaction boundary is not the cause --------
+    if gt:
+        A("<h3>Second control: wrapping it in one transaction does not help</h3>")
+        A(
+            "<p>The next objection is that the naive path used <em>two</em> "
+            "transactions, so the write skew was an artefact of the split. "
+            "<code>naive_txn</code> "
+            "answers that: read, check and write inside a <strong>single</strong> "
+            "transaction — what a competent engineer writes when told to make it "
+            "transactional — under the same seed and load.</p>"
+            '<pre class="cmd">make exp1b</pre>'
+        )
+        trows = []
+        for n in sorted(set(gn) | set(gt)):
+            # rate() already returns 0-100, so format as a plain number.
+            nrate = f"{rate(gn, n):.0f}%" if n in gn else "—"
+            trate = f"{rate(gt, n):.0f}%" if n in gt else "—"
+            tgrant = (
+                f"{statistics.mean(r['reserved_count'] for r in gt[n]):.2f}"
+                if n in gt
+                else "—"
+            )
+            cls = "bad" if n in gt and rate(gt, n) else "ok"
+            trows.append(
+                [
+                    n,
+                    len(gt.get(n, [])) or "—",
+                    f'<span class="{"bad" if n in gn and rate(gn,n) else "ok"}">{nrate}</span>',
+                    f'<span class="{cls}">{trate}</span>',
+                    tgrant,
+                    legal,
+                ]
+            )
+        A(
+            table(
+                [
+                    "N",
+                    "runs",
+                    "naive (2 txn)",
+                    "naive_txn (1 txn)",
+                    "granted",
+                    "legal",
+                ],
+                trows,
+            )
+        )
+        A(
+            "<p>The same breach profile, at every level. The transaction boundary "
+            "is not what makes the naive path unsafe. At READ COMMITTED a plain "
+            "<code>SELECT</code> takes no lock, each statement takes a fresh "
+            "snapshot, and the write carries no predicate — so there is nothing "
+            "for the database to re-check. What matters is <em>where the decision "
+            "is taken</em>, not how many transactions it spans.</p>"
+        )
+        A(
+            '<p class="note">Note this is <strong>not a lost update</strong>: every '
+            "increment applies and none is overwritten — I2 holds in "
+            f"{sum(1 for r in txn if r['i2_ledger_agreement'])}/{len(txn)} runs. "
+            "It is the same <strong>write skew</strong> named at the top of this "
+            "page, now shown to survive being wrapped in a single "
+            "transaction.</p>"
+        )
 
     # --- concurrency validity --------------------------------------------
     A(
@@ -559,7 +878,7 @@ def build():
     pk = read("exp4_process_kill.csv")
     if ca or pk:
         tot = len(ca) + len(pk)
-        passed = sum(1 for r in ca + pk if r["passed"]) 
+        passed = sum(1 for r in ca + pk if r["passed"])
         A(
             '<p class="q"><strong>Question.</strong> If the service dies between '
             "reserving budget and committing it, can the ledger be left "
@@ -689,15 +1008,19 @@ def build():
     src = []
     for f, lab in [
         ("exp1_naive_vs_n.csv", "Experiment 1 (naive)"),
+        ("exp1b_naive_txn_vs_n.csv", "Experiment 1b (naive_txn)"),
+        ("exp1c_race_window_vs_delay.csv", "Experiment 1c (race window)"),
         ("exp2_atomic_vs_n.csv", "Experiment 2 (atomic)"),
         ("exp1_naive_sequential_control.csv", "sequential control"),
+        ("exp_opendp_atomic.csv", "real-ε run (OpenDP)"),
     ]:
         if (RESULTS / f).exists():
             src.append(f"{lab}: <code>results/{f}</code>")
     A(
         '<p class="foot">Every figure on this page is computed at generation time '
         "from " + " · ".join(src) + ". Regenerate with "
-        "<code>make exp1 exp2 exp1-control &amp;&amp; python experiments/report.py</code>."
+        "<code>make exp1 exp1b exp2 exp1-control &amp;&amp; python "
+        "experiments/report.py</code>."
         "</p>"
     )
     A("</div>")

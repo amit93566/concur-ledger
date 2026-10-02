@@ -8,6 +8,12 @@ CREATE TABLE IF NOT EXISTS datasets (
     epsilon_cap      NUMERIC(12,6) NOT NULL,           -- the hard cap (policy input)
     epsilon_spent    NUMERIC(12,6) NOT NULL DEFAULT 0, -- committed, permanent
     epsilon_reserved NUMERIC(12,6) NOT NULL DEFAULT 0, -- held, not yet spent
+    -- RECORDED BUT NOT ENFORCED. Under (eps,delta)-DP the budget is
+    -- two-dimensional, but nothing reads this column: no delta_cap,
+    -- delta_spent or delta_reserved exists and no predicate references it.
+    -- Phase 2. The reserve predicate generalises to a conjunction over both
+    -- dimensions without changing the concurrency argument -- the same way it
+    -- generalises to a per-alpha conjunction under RDP.
     delta            NUMERIC(12,10) NOT NULL DEFAULT 0,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -26,7 +32,10 @@ CREATE TABLE IF NOT EXISTS spend_records (  -- one row per reservation attempt
     epsilon_reserved  NUMERIC(12,6) NOT NULL,   -- amount held at reserve time
     epsilon_committed NUMERIC(12,6),            -- actual cost; NULL until committed
     status            TEXT NOT NULL,            -- reserved|committed|released|denied
-    strategy          TEXT NOT NULL,            -- naive|atomic|for_update|serializable
+    -- naive|naive_txn|atomic (implemented) | for_update|serializable (Phase 2).
+    -- naive and naive_txn both breach; they differ only in whether the
+    -- read/check/write spans one transaction or two, which is the point.
+    strategy          TEXT NOT NULL,
     epsilon_source    TEXT,                     -- which adapter produced the cost
     actor             TEXT,
     reserved_at       TIMESTAMPTZ NOT NULL DEFAULT now(),

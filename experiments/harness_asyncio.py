@@ -39,11 +39,19 @@ FIELDS = [
     "adapter",
     "epsilon_source",
     "db_constraint_present",
+    "isolation_level",
     "naive_race_delay_ms",
     "reserved_count",
     "denied_count",
     "error_count",
     "expected_max_success",
+    # Where each caller's statement-1 read sat in the write sequence. These are
+    # what turn the overshoot plateau from a proposed mechanism into a measured
+    # one -- see _read_positions.
+    "reads_in_window",
+    "reads_after_write",
+    "denied_after_write_read",
+    "max_observed_reserved",
     "final_spent",
     "final_reserved",
     "total",
@@ -93,6 +101,45 @@ async def one_worker(client, ev, dataset_id, run, idx, cost, strategy, source):
         "outcome": "error",
         "detail": f"{resp.status_code} {resp.text}",
         "ms": ms,
+    }
+
+
+def _read_positions(results, strategy):
+    """How far into the write sequence each caller's read was -- the race window,
+    counted rather than asserted.
+
+    The naive family reports `observed_reserved` from statement 1, i.e. the
+    PRE-write read. Every caller increments `epsilon_reserved` by the same cost
+    from a seeded 0, so that value is a position in the sequence: 0 means no
+    peer's write was visible yet (the caller was inside the race window), and
+    anything above 0 means at least one increment had already landed when it
+    read, so it lost the window and any denial it got was legitimate.
+
+    `atomic` returns POST-update values from RETURNING, which describe the state
+    the database evaluated its predicate against, not a window. Reporting 0 for
+    it would invent a measurement, so it gets None -- the same discipline the
+    report applies to unrun concurrency levels.
+    """
+    if strategy not in ("naive", "naive_txn"):
+        return dict.fromkeys(
+            (
+                "reads_in_window",
+                "reads_after_write",
+                "denied_after_write_read",
+                "max_observed_reserved",
+            )
+        )
+    # Errored callers never reported a read, so they are counted in neither
+    # bucket; the two need not sum to N.
+    seen = [r for r in results if r.get("observed_reserved") is not None]
+    after = [r for r in seen if float(r["observed_reserved"]) > 0.0]
+    return {
+        "reads_in_window": sum(1 for r in seen if float(r["observed_reserved"]) == 0.0),
+        "reads_after_write": len(after),
+        "denied_after_write_read": sum(1 for r in after if r["outcome"] == "denied"),
+        "max_observed_reserved": max(
+            (float(r["observed_reserved"]) for r in seen), default=0.0
+        ),
     }
 
 
@@ -169,11 +216,15 @@ async def run_once(client, args, dataset_id, run, cost, source):
         "adapter": args.adapter,
         "epsilon_source": source,
         "db_constraint_present": args.constraint_state,
+        # Recorded per run: the atomic strategy's safety argument is specific to
+        # READ COMMITTED, so the level in force is part of the result.
+        "isolation_level": args.isolation_level,
         "naive_race_delay_ms": args.naive_race_delay_ms,
         "reserved_count": sum(1 for r in results if r["outcome"] == "reserved"),
         "denied_count": sum(1 for r in results if r["outcome"] == "denied"),
         "error_count": sum(1 for r in results if r["outcome"] == "error"),
         "expected_max_success": int(headroom // float(cost)),
+        **_read_positions(results, args.strategy),
         "final_spent": inv["epsilon_spent"],
         "final_reserved": inv["epsilon_reserved"],
         "total": inv["total"],
@@ -200,6 +251,7 @@ async def main_async(args):
     ) as client:
         cfg = (await client.get("/config")).json()
         args.naive_race_delay_ms = cfg["naive_race_delay_ms"]
+        args.isolation_level = cfg.get("isolation_level", "unknown")
         if cfg["pool_max_size"] < args.workers:
             print(
                 f"!! POOL_MAX_SIZE={cfg['pool_max_size']} < workers={args.workers}: "
@@ -240,6 +292,7 @@ async def main_async(args):
             f"cap={args.cap}  seeded spent={args.seed_spent}  "
             f"headroom={args.cap - args.seed_spent}  cost={cost}\n"
             f"within_cap CHECK present: {args.constraint_state}   "
+            f"isolation: {args.isolation_level}   "
             f"naive_race_delay_ms: {args.naive_race_delay_ms}\n"
             f"dataset: {dataset_id}\n"
         )
@@ -276,8 +329,8 @@ async def main_async(args):
         if len(args.worker_levels) > 1:
             vs_n(all_rows, args)
         if args.out:
-            write_csv(all_rows, Path(args.out))
-            print(f"\nwrote {args.out}")
+            write_csv(all_rows, Path(args.out), append=args.append)
+            print(f"\n{'appended to' if args.append else 'wrote'} {args.out}")
 
 
 def summarise(rows, args):
@@ -297,6 +350,15 @@ def summarise(rows, args):
         f"  actual successes (mean): "
         f"{statistics.mean(r['reserved_count'] for r in rows):.2f}"
     )
+    if rows[0]["reads_in_window"] is not None:
+        inw = statistics.mean(r["reads_in_window"] for r in rows)
+        aft = statistics.mean(r["reads_after_write"] for r in rows)
+        den = statistics.mean(r["denied_after_write_read"] for r in rows)
+        print(
+            f"  read inside the window : {inw:.2f}/{args.workers} "
+            f"= {inw/args.workers:.0%}  (mean per run)"
+        )
+        print(f"  read after a write     : {aft:.2f}, of which {den:.2f} denied")
     print(f"  I1 held in             : {sum(r['i1_cap_safety'] for r in rows)}/{n} runs")
     print(
         f"  I2 held in             : {sum(r['i2_ledger_agreement'] for r in rows)}/{n} runs"
@@ -348,10 +410,11 @@ def render_demo_run(row, args, cost):
     print()
     print("═" * 72)
     print(
-        f" STRATEGY {args.strategy.upper():<8}"
+        f" STRATEGY {args.strategy.upper():<10}"
         f"  within_cap CHECK: {'ON' if row['db_constraint_present'] else 'OFF'}"
         f"  ·  {args.workers} jobs × ε {float(cost)}"
     )
+    print(f" isolation: {row['isolation_level']}")
     print(
         f" cap {cap}  │  already spent {seeded}  │  headroom {headroom}"
         f"  │  only {legal} can legally be granted"
@@ -374,9 +437,12 @@ def render_demo_run(row, args, cost):
         os_, or_ = r.get("observed_spent"), r.get("observed_reserved")
         mark = ""
 
-        if args.strategy == "naive":
+        if args.strategy in ("naive", "naive_txn"):
             # observed = the PRE-write read, so the projection it computed is
-            # exactly the (stale) decision it made.
+            # exactly the (stale) decision it made. Both naive variants report
+            # the pre-write values; only `atomic` returns post-update ones, so
+            # this branch must cover both or the trace prints atomic's wording
+            # over naive's numbers.
             if os_ is None:
                 line = "read(—)"
             else:
@@ -436,30 +502,48 @@ def vs_n(rows, args):
     """Breach rate and overshoot as functions of N -- the Experiment 1 metric."""
     print("\n" + "=" * 68)
     print(f"{args.strategy}: breach rate and overshoot vs concurrency")
-    print(f"{'N':>5} {'runs':>5} {'breach rate':>12} {'overshoot mean':>15} {'max':>8}")
+    print(
+        f"{'N':>5} {'runs':>5} {'breach rate':>12} {'overshoot mean':>15} {'max':>8} "
+        f"{'granted':>8} {'in window':>10}"
+    )
     for n in args.worker_levels:
         sub = [r for r in rows if r["workers"] == n]
         br = sum(r["breach"] for r in sub) / len(sub)
         ov = [r["overshoot"] for r in sub]
+        gr = statistics.mean(r["reserved_count"] for r in sub)
+        # The plateau, if there is one, shows up as `granted` flattening while
+        # `in window` falls -- the same number of winners out of a larger field.
+        w = (
+            f"{statistics.mean(r['reads_in_window'] for r in sub)/n:>10.0%}"
+            if sub[0]["reads_in_window"] is not None
+            else f"{'—':>10}"
+        )
         print(
             f"{n:>5} {len(sub):>5} {br:>11.0%} {statistics.mean(ov):>15.3f} "
-            f"{max(ov):>8.3f}"
+            f"{max(ov):>8.3f} {gr:>8.2f} {w}"
         )
     print("=" * 68)
 
 
-def write_csv(rows, path: Path):
+def write_csv(rows, path: Path, append=False):
+    """Append exists for sweeps of a *server* setting: NAIVE_RACE_DELAY_MS is
+    read from the service's /config, so each point of that sweep is a separate
+    process against a restarted service, accumulating into one CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="") as fh:
+    existing = append and path.exists() and path.stat().st_size > 0
+    with path.open("a" if existing else "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
-        w.writeheader()
+        if not existing:
+            w.writeheader()
         for r in rows:
             w.writerow({k: r[k] for k in FIELDS})
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Experiments 1 & 2")
-    p.add_argument("--strategy", default="naive", choices=["naive", "atomic"])
+    p.add_argument(
+        "--strategy", default="naive", choices=["naive", "naive_txn", "atomic"]
+    )
     p.add_argument("--cap", type=float, default=10.0)
     p.add_argument("--seed-spent", dest="seed_spent", type=float, default=6.0)
     p.add_argument("--cost", type=float, default=2.0)
@@ -471,6 +555,12 @@ def parse_args():
     p.add_argument("--runs", type=int, default=20)
     p.add_argument("--base-url", dest="base_url", default="http://localhost:8000")
     p.add_argument("--out", default=None, help="write results CSV here")
+    p.add_argument(
+        "--append",
+        action="store_true",
+        help="append to --out rather than replacing it -- for sweeping a server "
+        "setting (NAIVE_RACE_DELAY_MS), where each point needs its own process",
+    )
     p.add_argument(
         "--adapter",
         default="none",

@@ -13,8 +13,8 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
-ALL_STRATEGIES = ("naive", "atomic", "for_update", "serializable")
-IMPLEMENTED_STRATEGIES = ("naive", "atomic")
+ALL_STRATEGIES = ("naive", "naive_txn", "atomic", "for_update", "serializable")
+IMPLEMENTED_STRATEGIES = ("naive", "naive_txn", "atomic")
 
 
 class StrategyNotImplemented(Exception):

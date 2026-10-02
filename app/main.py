@@ -23,8 +23,14 @@ from app.adapters import AdapterUnavailable, get_adapter, registry
 from app.adapters import opendp_adapter, passthrough  # noqa: F401  (registration)
 from app.config import settings
 from app.db import close_pool, get_pool, open_pool
-from app.enforcement import atomic, naive  # noqa: F401  (registration)
+from app.enforcement import (  # noqa: F401  (registration)
+    atomic,
+    naive,
+    naive_single_txn,
+)
 from app.enforcement.base import (
+    ALL_STRATEGIES,
+    IMPLEMENTED_STRATEGIES,
     DatasetNotFound,
     ReserveRequest,
     StrategyNotImplemented,
@@ -115,13 +121,23 @@ async def config():
     CHECK constraint really is off during the breach."""
     async with get_pool().connection() as conn:
         db_constraint = await constraint_enabled(conn)
+        # Read back from the session rather than reporting the constant, so this
+        # is evidence that the pin in app/db.py took effect rather than an
+        # assertion that it did. The harness records it in every results row.
+        cur = await conn.execute("SHOW transaction_isolation")
+        isolation = (await cur.fetchone())["transaction_isolation"]
     return {
         "enforce_db_constraint_env": settings.enforce_db_constraint,
         "within_cap_constraint_present": db_constraint,
+        "isolation_level": isolation,
         "naive_race_delay_ms": settings.naive_race_delay_ms,
         "pool_max_size": settings.pool_max_size,
-        "implemented_strategies": ["naive", "atomic"],
-        "phase_2_strategies": ["for_update", "serializable"],
+        # Derived from the registry, not restated, so this cannot drift out of
+        # step with what is actually registered.
+        "implemented_strategies": list(IMPLEMENTED_STRATEGIES),
+        "phase_2_strategies": [
+            s for s in ALL_STRATEGIES if s not in IMPLEMENTED_STRATEGIES
+        ],
         "pid": os.getpid(),
         "instance_id": INSTANCE_ID,
         "uptime_s": round(time.time() - STARTED_AT, 3),

@@ -6,3 +6,5 @@ results/figures/
 .DS_Store
 .run/
 results/report.html
+results/summary.html
+bundle-for-chat.md

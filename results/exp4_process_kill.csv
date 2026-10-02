@@ -1,5 +1,5 @@
 mode,check,invariant,passed,detail
-process-kill,process really died and restarted,—,True,"3/3 kills, instance 07475f53 -> 3a39e60f, uptime now 0.148s"
+process-kill,process really died and restarted,—,True,"3/3 kills, instance 75fa3915 -> d712369e, uptime now 0.092s"
 process-kill,I1 holds after restart,I1,True,
 process-kill,I2 shows no drift after restart,I2,True,reserved=3.0 records=3.0
 process-kill,reservations survived the crash as holds,I3,True,{'reserved': 3}
@@ -13,3 +13,10 @@ process-kill,I2 holds after retried commit,I2,True,
 process-kill,release of a committed reservation is rejected,I3,True,returned status=committed
 process-kill,the ledger is unchanged by the rejected release,I3,True,spent=1.0 reserved=0.0
 process-kill,committing more than was held is rejected,I3,True,HTTP 400
+process-kill,the upper bound is held in full,I1,True,reserved=2.0 expected=2.0
+process-kill,"spent rises by the ACTUAL cost, not the amount held",I1,True,spent=1.0 actual=1.0 held=2.0
+process-kill,the whole hold is released,I1,True,reserved=0.0
+process-kill,the unused difference returns to available budget,I1,True,free=99.0 expected=99.0
+process-kill,I2 holds after a partial commit,I2,True,spent=1.0 records=1.0
+process-kill,"the record shows the actual charge, not the hold",I2,True,committed=1.0 held=2.0
+process-kill,the refunded budget is reservable again,I1,True,HTTP 200 total=100.0/100.0

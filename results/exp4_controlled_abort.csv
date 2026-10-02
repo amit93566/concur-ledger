@@ -14,3 +14,10 @@ controlled-abort,I2 holds after retried commit,I2,True,
 controlled-abort,release of a committed reservation is rejected,I3,True,returned status=committed
 controlled-abort,the ledger is unchanged by the rejected release,I3,True,spent=1.0 reserved=0.0
 controlled-abort,committing more than was held is rejected,I3,True,HTTP 400
+controlled-abort,the upper bound is held in full,I1,True,reserved=2.0 expected=2.0
+controlled-abort,"spent rises by the ACTUAL cost, not the amount held",I1,True,spent=1.0 actual=1.0 held=2.0
+controlled-abort,the whole hold is released,I1,True,reserved=0.0
+controlled-abort,the unused difference returns to available budget,I1,True,free=99.0 expected=99.0
+controlled-abort,I2 holds after a partial commit,I2,True,spent=1.0 records=1.0
+controlled-abort,"the record shows the actual charge, not the hold",I2,True,committed=1.0 held=2.0
+controlled-abort,the refunded budget is reservable again,I1,True,HTTP 200 total=100.0/100.0

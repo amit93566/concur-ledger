@@ -1,21 +1,21 @@
-run,strategy,workers,cap,seed_spent,cost,adapter,epsilon_source,db_constraint_present,naive_race_delay_ms,reserved_count,denied_count,error_count,expected_max_success,final_spent,final_reserved,total,overshoot,breach,i1_cap_safety,i2_ledger_agreement,i4_exactly_once,reserved_at_spread_ms,wall_ms,latency_p50_ms,latency_max_ms
-1,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,16.067,20.362,4.131,4.557
-2,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,14.327,17.615,3.401,3.982
-3,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,13.563,17.123,3.419,3.788
-4,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,11.957,15.338,2.781,3.866
-5,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,14.724,17.869,3.689,3.832
-6,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,13.748,17.083,3.343,3.668
-7,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,16.551,20.573,4.116,4.229
-8,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,16.174,20.08,3.984,4.154
-9,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,16.283,20.257,4.041,4.169
-10,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,2,3,0,2,6.0,4.0,10.0,0.0,False,True,True,True,17.62,21.816,4.575,4.753
-1,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,76.959,81.241,4.005,5.088
-2,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,79.232,83.325,4.086,5.149
-3,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,78.39,82.351,4.009,4.694
-4,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,79.599,83.552,4.11,4.571
-5,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,72.452,76.386,3.723,4.526
-6,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,69.164,72.604,3.546,4.345
-7,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,63.013,66.186,3.201,3.989
-8,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,78.353,81.384,3.707,8.222
-9,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,71.185,74.968,3.636,5.408
-10,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,2,18,0,2,6.0,4.0,10.0,0.0,False,True,True,True,58.843,61.883,2.819,4.572
+run,strategy,workers,cap,seed_spent,cost,adapter,epsilon_source,db_constraint_present,isolation_level,naive_race_delay_ms,reserved_count,denied_count,error_count,expected_max_success,reads_in_window,reads_after_write,denied_after_write_read,max_observed_reserved,final_spent,final_reserved,total,overshoot,breach,i1_cap_safety,i2_ledger_agreement,i4_exactly_once,reserved_at_spread_ms,wall_ms,latency_p50_ms,latency_max_ms
+1,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,13.607,16.869,3.405,3.683
+2,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,13.911,17.546,3.5,4.049
+3,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,13.135,16.34,3.184,3.898
+4,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,12.944,15.962,3.21,3.331
+5,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,14.629,18.258,3.837,4.242
+6,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,12.682,15.689,3.128,3.373
+7,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,14.739,18.72,3.779,4.412
+8,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,13.768,17.831,3.101,4.907
+9,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,16.768,20.8,4.202,4.61
+10,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,3,0,2,1,4,3,4.0,6.0,4.0,10.0,0.0,False,True,True,True,14.067,17.205,3.248,3.938
+1,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,71.482,75.011,3.689,4.441
+2,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,69.852,73.653,3.601,4.837
+3,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,68.105,72.153,3.589,4.751
+4,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,62.682,66.587,3.191,4.167
+5,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,65.563,68.969,3.331,4.426
+6,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,67.241,71.141,3.347,4.818
+7,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,72.693,76.828,3.768,5.068
+8,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,74.781,78.222,3.838,4.573
+9,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,73.703,77.531,3.729,5.195
+10,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,18,0,2,1,19,18,4.0,6.0,4.0,10.0,0.0,False,True,True,True,69.711,72.961,3.247,5.289

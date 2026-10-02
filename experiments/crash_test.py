@@ -291,6 +291,94 @@ async def idempotency_checks(client, args, checks):
     await client.post(f"/reservations/{r2['reservation_id']}/release")
 
 
+# ---------------------------------------------------------------------------
+# partial commit: reserve an upper bound, commit the actual, refund the rest
+#
+# This path exists because a cost is not always known exactly before the
+# mechanism runs. Where it is data-dependent, the protocol degrades gracefully:
+# reserve an upper bound, then commit what the mechanism actually charged. The
+# difference must return to available budget -- not stay held, and not be spent.
+#
+# It is checked here because nothing else exercises it: the OpenDP adapter
+# prices deterministically, so in every other run `actual` equals `held` and this
+# branch of settle.py would otherwise be untested code that moves budget.
+#
+# Caveat that belongs with the result, not in the code: if the realised cost
+# depends on private data, the refunded amount is itself a disclosure. Under
+# deterministic pricing -- what this system does -- that does not arise.
+# ---------------------------------------------------------------------------
+
+
+async def partial_commit_checks(client, args, checks):
+    print("\n--- partial commit: the unused hold returns to the budget ---")
+    dataset_id = await fresh_dataset(client, args.cap, 0.0)
+
+    held = args.cost * 2
+    actual = args.cost
+    body = {
+        "job_id": "j-partial",
+        "idempotency_key": f"partial-{uuid.uuid4().hex[:8]}",
+        "epsilon_cost": held,
+        "strategy": args.strategy,
+    }
+    r = (await client.post(f"/datasets/{dataset_id}/reserve", json=body)).json()
+    before = await inv(client, dataset_id)
+    checks.record(
+        "the upper bound is held in full",
+        before["epsilon_reserved"] == held,
+        f"reserved={before['epsilon_reserved']} expected={held}", invariant="I1")
+
+    settled = (
+        await client.post(
+            f"/reservations/{r['reservation_id']}/commit",
+            json={"actual_cost": actual},
+        )
+    ).json()
+    after = await inv(client, dataset_id)
+
+    checks.record(
+        "spent rises by the ACTUAL cost, not the amount held",
+        after["epsilon_spent"] == actual,
+        f"spent={after['epsilon_spent']} actual={actual} held={held}", invariant="I1")
+    checks.record(
+        "the whole hold is released",
+        after["epsilon_reserved"] == 0,
+        f"reserved={after['epsilon_reserved']}", invariant="I1")
+    checks.record(
+        "the unused difference returns to available budget",
+        (args.cap - after["epsilon_spent"] - after["epsilon_reserved"])
+        == args.cap - actual,
+        f"free={args.cap - after['epsilon_spent'] - after['epsilon_reserved']} "
+        f"expected={args.cap - actual}", invariant="I1")
+    checks.record(
+        "I2 holds after a partial commit",
+        after["i2_ledger_agreement"],
+        f"spent={after['epsilon_spent']} records={after['records_committed']}",
+        invariant="I2")
+    checks.record(
+        "the record shows the actual charge, not the hold",
+        settled["epsilon_committed"] == actual and settled["epsilon_held"] == held,
+        f"committed={settled['epsilon_committed']} held={settled['epsilon_held']}",
+        invariant="I2")
+
+    # The refunded budget must be genuinely usable again, not merely accounted.
+    reuse = await client.post(
+        f"/datasets/{dataset_id}/reserve",
+        json={
+            "job_id": "j-reuse",
+            "idempotency_key": f"reuse-{uuid.uuid4().hex[:8]}",
+            "epsilon_cost": args.cap - actual,
+            "strategy": args.strategy,
+        },
+    )
+    final = await inv(client, dataset_id)
+    checks.record(
+        "the refunded budget is reservable again",
+        reuse.status_code == 200 and final["i1_cap_safety"],
+        f"HTTP {reuse.status_code} total={final['total']}/{final['epsilon_cap']}",
+        invariant="I1")
+
+
 async def main_async(args):
     async with httpx.AsyncClient(base_url=args.base_url, timeout=60.0) as client:
         # Run with the CHECK dropped: the protocol, not the database, must be
@@ -303,6 +391,7 @@ async def main_async(args):
         if args.mode in ("process-kill", "all"):
             await process_kill(client, args, checks)
         await idempotency_checks(client, args, checks)
+        await partial_commit_checks(client, args, checks)
 
         print(f"\nfault-injection method used: {args.mode}")
         if args.out:
@@ -325,7 +414,9 @@ def parse_args():
     p.add_argument("--runs", type=int, default=30)
     p.add_argument("--cap", type=float, default=100.0)
     p.add_argument("--cost", type=float, default=1.0)
-    p.add_argument("--strategy", default="atomic", choices=["naive", "atomic"])
+    p.add_argument(
+        "--strategy", default="atomic", choices=["naive", "naive_txn", "atomic"]
+    )
     p.add_argument("--base-url", dest="base_url", default="http://localhost:8000")
     p.add_argument("--out", default=None, help="write per-check results CSV here")
     return p.parse_args()

@@ -1,0 +1,21 @@
+run,strategy,workers,cap,seed_spent,cost,adapter,epsilon_source,db_constraint_present,isolation_level,naive_race_delay_ms,reserved_count,denied_count,error_count,expected_max_success,reads_in_window,reads_after_write,denied_after_write_read,max_observed_reserved,final_spent,final_reserved,total,overshoot,breach,i1_cap_safety,i2_ledger_agreement,i4_exactly_once,reserved_at_spread_ms,wall_ms,latency_p50_ms,latency_max_ms
+1,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,2.898,19.771,14.751,18.626
+2,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,0.8,13.379,8.976,11.819
+3,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,1.002,14.965,10.182,13.468
+4,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,3.103,15.938,11.01,14.942
+5,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,0.851,13.333,8.994,11.409
+6,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,0.894,11.673,8.083,10.945
+7,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,0.791,11.86,8.775,10.726
+8,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,1.101,11.817,8.458,10.791
+9,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,0.878,11.926,8.271,11.251
+10,atomic,5,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,3,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,1.722,11.724,7.867,10.715
+1,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,39.076,50.934,35.592,49.039
+2,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,23.265,35.801,21.641,32.754
+3,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,23.362,33.784,20.603,32.881
+4,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,23.147,32.672,18.867,31.026
+5,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,20.849,31.464,19.939,29.489
+6,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,24.981,35.016,20.87,33.076
+7,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,24.845,35.249,21.825,33.753
+8,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,24.557,35.511,21.542,34.465
+9,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,24.05,34.677,23.53,30.474
+10,atomic,20,10.0,6.0,2.0,opendp,opendp,False,read committed,0.0,2,18,0,2,,,,,6.0,4.0,10.0,0.0,False,True,True,True,22.293,31.569,19.084,29.269

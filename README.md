@@ -32,21 +32,51 @@ headroom), N concurrent reserves of ε=2. Only 2 should ever succeed.
 | 2 | 15 | **0%** | 0.000 | 0.000 | 2.00 | 2 |
 | 3 | 15 | 100% | 2.000 | 2.000 | 3.00 | 3 |
 | 5 | 15 | 100% | 6.000 | 6.000 | 5.00 | 5 |
-| 10 | 15 | 100% | 11.333 | 16.000 | 7.67 | 10 |
-| 20 | 15 | 100% | 8.533 | 16.000 | 6.27 | 10 |
-| 50 | 15 | 100% | 8.533 | 12.000 | 6.27 | 8 |
+| 10 | 15 | 100% | 5.600 | 8.000 | 4.80 | 6 |
+| 20 | 15 | 100% | 5.333 | 14.000 | 4.67 | 9 |
+| 50 | 15 | 100% | 7.200 | 14.000 | 5.60 | 9 |
 
 N=2 is the control: two reserves of 2 fit exactly into 4 of headroom, so no
 breach occurs and none should. From N=3 the naive path breaches every time,
-granting up to **10 reservations where 2 fit** — the cap is exceeded by 16 ε,
-i.e. **2.6× the budget**.
+granting up to **9 reservations where 2 fit** — the cap is exceeded by 14 ε,
+i.e. **2.4× the budget**.
 
-Overshoot is not monotonic in N: it peaks around N=10 and then flattens. That is
-the correct behaviour, not noise. Beyond ~N=10 the run takes long enough
-(see `reserved_at_spread_ms` below) that later arrivals read a partly-updated
-row and are legitimately denied, so a larger fraction of requests lose the race
-they were trying to win. Exact per-N figures vary run to run; regenerate with
-`make exp1`.
+Overshoot is not monotonic in N: it peaks around N=10 and then flattens. The
+mechanism is **measured, not proposed**. Every naive caller reports the values it
+read in statement 1, and because each reservation increments `epsilon_reserved`
+from a seeded zero, that read is a position in the write sequence: `reserved = 0`
+means no peer's write was visible yet, so the caller was inside the race window.
+Counted per run (`reads_in_window`):
+
+| N | read inside the window | share of N | mean granted |
+|---:|---:|---:|---:|
+| 2 | 2.00 | 100% | 2.00 |
+| 3 | 3.00 | 100% | 3.00 |
+| 5 | 4.73 | 95% | 5.00 |
+| 10 | 3.47 | 35% | 4.80 |
+| 20 | 3.73 | 19% | 4.67 |
+| 50 | 4.73 | 9% | 5.60 |
+
+More contention does not produce more successful overspending: it produces more
+callers arriving *after* the writes have landed, who are correctly denied. The
+overspend is bounded by how many callers fit inside the window, not by how many
+compete.
+
+`make exp1c` supplies the intervention — hold N at 20 and widen the window with
+`NAIVE_RACE_DELAY_MS` instead of raising N:
+
+| delay (ms) | read inside the window | mean granted | mean overshoot |
+|---:|---:|---:|---:|
+| 0 | 3.70 / 20 | 4.60 | 5.20 |
+| 5 | 6.00 / 20 | 7.10 | 10.20 |
+| 25 | 19.00 / 20 | 19.30 | 34.60 |
+| 100 | 20.00 / 20 | 20.00 | 36.00 |
+
+Monotonic, saturating at ε 36 — the arithmetic maximum for 20 reserves of 2
+against a cap of 10 seeded at 6. The plateau is a property of the window, not of
+the concurrency. The delay is an instrument, not a claim about production
+timings; the breach result at `delay=0` needs no instrument at all. Exact per-N
+figures vary run to run; regenerate with `make exp1 exp1c`.
 
 **The naive path is faithful, not sabotaged.** The strongest evidence is the
 sequential control (`make exp1-control`): the *same* naive code, the same
@@ -130,8 +160,12 @@ Individual pieces:
 make opendp       # real OpenDP query -> real epsilon -> reserved, committed, enforced
 make demo-breach  # PRESENTATION: visual budget bar + per-worker stale-read trace
 make demo-safe    # PRESENTATION: identical load on atomic, cap holds
-make report       # regenerate results/report.html from the CSVs
+make summary      # results/summary.html -- one-page evidence sheet, exp 1-4
+make report       # results/report.html  -- the argued, explanatory version
+make docs         # both of the above plus bundle-for-chat.md
 make exp1         # the breach, with breach rate vs N
+make exp1b        # the same breach inside ONE transaction -> still breaches
+make demo-txn     # PRESENTATION: one transaction, no lock, cap still breaks
 make exp1-control # the same naive code, run sequentially -> no breach
 make exp2         # the fix, escalating to N=100
 make exp4         # crash: controlled abort
@@ -173,6 +207,25 @@ unconditionally. The gap between them is the race window. **Nothing is
 sabotaged** — the same code is correct under no concurrency, which is exactly why
 it is a plausible first implementation.
 
+`naive_txn` (`app/enforcement/naive_single_txn.py`) — the same read → check →
+write, but wrapped in a **single** transaction. It breaches identically, and it
+exists to answer the obvious objection that the two-transaction split was what
+made `naive` fail. At READ COMMITTED a plain `SELECT` takes no lock, each
+statement takes a fresh snapshot, and the write carries no predicate, so the
+transaction boundary buys nothing. What matters is *where the decision is taken*.
+
+**One name for the bug: write skew.** Each transaction's decision was valid
+against the state it read, and the cap is violated only by the combination. That
+term is used for the anomaly everywhere — here, in `results/report.html`,
+`results/summary.html`, `bundle-for-chat.md` and the source comments.
+*"read → check → write"* names the **code shape** that admits it and *"race
+window"* names the **gap in time** between the read and the write; neither is a
+second name for the anomaly.
+
+It is specifically **not a lost update** — every increment applies, none is
+overwritten, and I2 holds throughout. Write skew is the canonical anomaly
+permitted by READ COMMITTED and prevented by SERIALIZABLE.
+
 `atomic` (`app/enforcement/atomic.py`) — the check moves out of Python and into
 the WHERE clause of the write:
 
@@ -188,6 +241,17 @@ One statement, so check and write cannot interleave. `for_update` and
 to something safe.
 
 ### Invariants
+
+### Isolation level
+
+Pinned to **READ COMMITTED** in `app/db.py`, not inherited. The atomic strategy's
+safety argument is specific to it: when a concurrent `UPDATE` commits first,
+Postgres re-evaluates the second updater's `WHERE` against the newly committed
+row version and returns rowcount 0 if it no longer fits. At REPEATABLE READ or
+SERIALIZABLE the same situation raises SQLSTATE `40001` instead, which is safe
+only with a retry loop — that is the Phase 2 `serializable` strategy. The server
+default was already READ COMMITTED, so pinning it invalidates no earlier result;
+it makes a dependency explicit. Every results row now records the level in force.
 
 - **I1** cap safety: `epsilon_spent + epsilon_reserved <= epsilon_cap`
 - **I2** ledger agreement: running columns equal the sums over record rows
@@ -234,7 +298,7 @@ fallback so the enforcement logic can be exercised without a DP library.
   re-added. The service logs this loudly and **runs without the net** rather than
   refusing to boot. `make reset-db` clears it.
 - **Verify the concurrency is real.** Every run reports `reserved_at_spread_ms`.
-  At N=5 the timestamps cluster within ~1 ms. If they were spread out, requests
+  At N=5 the timestamps cluster within ~2 ms. If they were spread out, requests
   were serialised and the run proves nothing; the harness warns above 250 ms.
 - **`POOL_MAX_SIZE` must be ≥ the worker count**, or requests serialise at the
   connection pool instead of at the database. The harness checks this and warns.
@@ -253,7 +317,7 @@ and is harmless on other platforms.
 ### Measurement-validity caveat
 
 The harness and the server share one machine. `reserved_at_spread_ms` grows with
-N — ~0.8 ms at N=5, ~75 ms at N=50, ~157 ms at N=100 — so at the top of the range
+N — ~2 ms at N=5, ~102 ms at N=50, ~224 ms at N=100 — so at the top of the range
 some of that spread is client-side scheduling, not database behaviour. This does
 not affect the Experiment 1 and 2 *safety* conclusions (a breach either happened
 or it did not), but it is why Experiment 3's latency numbers will need a no-op
@@ -272,6 +336,50 @@ experiments/       harness_asyncio.py (Exp 1&2), crash_test.py (Exp 4), opendp_d
 docs/              privatekube-comparison.md (Gate A)
 results/           generated CSVs
 ```
+
+## Known limitations
+
+Stated here rather than discovered in the viva. None of them undermines the
+safety result; each bounds what it covers.
+
+- **An orphaned hold is not reclaimed automatically.** A crash between reserve
+  and commit leaves budget `reserved` — correctly, since the operation may have
+  run — but nothing expires it. Recovery today is a manual `POST
+  /reservations/{id}/release`, which is what Experiment 4 exercises. The
+  designed fix is a **lease**: give each reservation an `expires_at`, exclude
+  expired rows from the reserve predicate, and have a reaper release them. That
+  moves the failure from "budget locked forever" to "budget locked for at most
+  one lease period", and it introduces a real trade-off — too short a lease
+  releases a hold while the operation is still running, which is the one way
+  this design could double-spend. Not built; Phase 2.
+- **One contended row.** Every experiment targets a single dataset row. That is
+  the worst case for safety and the right choice for proving the cap holds, but
+  it says nothing about throughput across many datasets, where the hotspot
+  disappears and the strategies should converge. Experiment 3 should carry at
+  least one multi-dataset arm.
+- **Basic composition, δ = 0.** The ledger sums ε linearly. `delta` is stored
+  but no predicate reads it, and no advanced-composition or RDP accountant is
+  wired in. This is deliberate — composition is the DP library's job, not the
+  ledger's — and the reserve predicate generalises to a conjunction over both
+  dimensions (or over per-α RDP terms) without changing the concurrency
+  argument. But as it stands the system enforces the simplest accounting only.
+- **Zero breaches is evidence, not proof.** 175 atomic runs found no violation.
+  That is an empirical result over the tested conditions. The *argument* for why
+  it cannot breach is PostgreSQL's documented READ COMMITTED behaviour: a
+  concurrent `UPDATE` to the same row blocks the second updater until the first
+  commits, after which the second **re-evaluates its `WHERE` against the newly
+  committed row version** and affects zero rows if the predicate no longer
+  holds. The measurement corroborates the argument; it does not replace it.
+- **Three process kills.** The controlled-abort path has many runs, but the real
+  `os._exit` path has only 3, because each one costs a container restart. Enough
+  to show the protocol survives; too few to characterise anything rarer. Raise
+  the count before the final report.
+- **Single machine.** Harness, service and database share one host, so
+  high-N latency includes client-side scheduling. Safety conclusions are
+  unaffected — a breach either happened or it did not — but Experiment 3's cost
+  numbers will need a no-op baseline and a stated saturation point.
+
+---
 
 ## Scope
 

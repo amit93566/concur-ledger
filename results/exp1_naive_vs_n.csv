@@ -1,91 +1,91 @@
-run,strategy,workers,cap,seed_spent,cost,adapter,epsilon_source,db_constraint_present,naive_race_delay_ms,reserved_count,denied_count,error_count,expected_max_success,final_spent,final_reserved,total,overshoot,breach,i1_cap_safety,i2_ledger_agreement,i4_exactly_once,reserved_at_spread_ms,wall_ms,latency_p50_ms,latency_max_ms
-1,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.204,12.508,10.782,11.2
-2,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.24,12.631,11.329,11.619
-3,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.012,7.988,6.883,7.938
-4,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.184,10.482,9.116,10.404
-5,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.149,9.775,8.635,9.314
-6,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.153,15.747,14.26,15.632
-7,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.099,8.95,7.72,8.321
-8,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.065,7.695,6.741,7.242
-9,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.061,10.561,9.172,9.554
-10,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.169,15.359,13.788,15.246
-11,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.123,13.182,11.441,11.528
-12,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.582,8.605,7.555,7.983
-13,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.146,13.323,11.753,13.227
-14,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.418,9.282,8.242,8.689
-15,naive,2,10.0,6.0,2.0,none,passed_in,False,0.0,2,0,0,2,6.0,4.0,10.0,0.0,False,True,True,True,0.093,9.775,8.793,8.891
-1,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.524,14.379,12.762,12.831
-2,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.313,11.381,9.655,10.529
-3,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.324,10.931,8.897,10.295
-4,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.541,11.285,9.087,10.246
-5,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.494,42.669,40.816,41.153
-6,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.179,13.104,11.608,11.635
-7,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.348,12.402,10.482,11.679
-8,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.453,16.858,12.961,16.771
-9,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.633,18.027,15.134,17.948
-10,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.357,12.035,10.751,10.837
-11,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.388,13.542,10.203,12.402
-12,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.399,11.181,8.45,10.379
-13,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.356,11.18,8.873,10.341
-14,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,0.882,12.751,9.728,12.009
-15,naive,3,10.0,6.0,2.0,none,passed_in,False,0.0,3,0,0,2,6.0,6.0,12.0,2.0,True,False,True,True,1.093,12.274,10.074,10.905
-1,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.996,25.362,18.724,22.973
-2,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.541,24.393,18.89,22.886
-3,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.748,27.55,20.277,26.02
-4,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.792,16.186,10.814,14.601
-5,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.301,15.821,11.387,15.005
-6,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,2.614,26.131,20.774,24.79
-7,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.372,21.013,15.18,19.772
-8,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.579,20.203,14.624,18.994
-9,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,2.131,17.325,13.168,16.674
-10,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,2.958,15.711,11.312,15.14
-11,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,2.31,16.556,12.622,15.641
-12,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.744,19.587,14.807,17.05
-13,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,0.41,25.768,18.829,24.352
-14,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.804,16.598,12.292,15.588
-15,naive,5,10.0,6.0,2.0,none,passed_in,False,0.0,5,0,0,2,6.0,10.0,16.0,6.0,True,False,True,True,1.673,17.127,12.12,16.138
-1,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,9,1,0,2,6.0,18.0,24.0,14.0,True,False,True,True,17.07,34.143,25.508,32.544
-2,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,3,7,0,2,6.0,6.0,12.0,2.0,True,False,True,True,11.243,27.02,17.165,23.689
-3,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,3,7,0,2,6.0,6.0,12.0,2.0,True,False,True,True,14.268,29.697,22.391,26.611
-4,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,10,0,0,2,6.0,20.0,26.0,16.0,True,False,True,True,6.418,34.508,24.723,31.877
-5,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,7,3,0,2,6.0,14.0,20.0,10.0,True,False,True,True,11.767,28.792,20.812,26.214
-6,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,10,0,0,2,6.0,20.0,26.0,16.0,True,False,True,True,6.663,33.262,23.899,28.959
-7,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,5,5,0,2,6.0,10.0,16.0,6.0,True,False,True,True,15.103,28.911,21.377,27.013
-8,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,5,5,0,2,6.0,10.0,16.0,6.0,True,False,True,True,8.995,20.484,15.741,19.458
-9,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,10,0,0,2,6.0,20.0,26.0,16.0,True,False,True,True,2.659,43.627,32.506,43.529
-10,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,7,3,0,2,6.0,14.0,20.0,10.0,True,False,True,True,11.156,30.237,20.511,24.365
-11,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,8,2,0,2,6.0,16.0,22.0,12.0,True,False,True,True,12.037,33.83,24.344,29.159
-12,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,4,6,0,2,6.0,8.0,14.0,4.0,True,False,True,True,13.34,23.253,15.685,22.119
-13,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,4,6,0,2,6.0,8.0,14.0,4.0,True,False,True,True,11.646,24.698,16.065,21.872
-14,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,10,0,0,2,6.0,20.0,26.0,16.0,True,False,True,True,4.697,42.632,29.794,36.78
-15,naive,10,10.0,6.0,2.0,none,passed_in,False,0.0,6,4,0,2,6.0,12.0,18.0,8.0,True,False,True,True,9.322,21.842,16.918,20.517
-1,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,7,13,0,2,6.0,14.0,20.0,10.0,True,False,True,True,32.154,47.68,31.563,41.99
-2,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,7,13,0,2,6.0,14.0,20.0,10.0,True,False,True,True,30.726,43.107,27.906,40.125
-3,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,6,14,0,2,6.0,12.0,18.0,8.0,True,False,True,True,42.063,55.16,37.386,52.663
-4,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,6,14,0,2,6.0,12.0,18.0,8.0,True,False,True,True,31.318,48.728,29.955,42.663
-5,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,5,15,0,2,6.0,10.0,16.0,6.0,True,False,True,True,35.444,51.629,34.65,47.47
-6,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,8,12,0,2,6.0,16.0,22.0,12.0,True,False,True,True,31.694,44.527,31.237,39.712
-7,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,6,14,0,2,6.0,12.0,18.0,8.0,True,False,True,True,35.522,50.151,31.852,44.073
-8,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,6,14,0,2,6.0,12.0,18.0,8.0,True,False,True,True,33.276,48.327,28.624,41.554
-9,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,8,12,0,2,6.0,16.0,22.0,12.0,True,False,True,True,35.679,62.104,45.908,58.182
-10,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,4,16,0,2,6.0,8.0,14.0,4.0,True,False,True,True,32.285,45.062,27.188,43.203
-11,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,6,14,0,2,6.0,12.0,18.0,8.0,True,False,True,True,35.401,50.931,31.418,45.611
-12,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,20,0,0,2,6.0,40.0,46.0,36.0,True,False,True,True,51.561,90.517,66.263,84.706
-13,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,4,16,0,2,6.0,8.0,14.0,4.0,True,False,True,True,39.527,55.002,39.234,49.46
-14,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,5,15,0,2,6.0,10.0,16.0,6.0,True,False,True,True,34.37,50.287,29.906,43.254
-15,naive,20,10.0,6.0,2.0,none,passed_in,False,0.0,8,12,0,2,6.0,16.0,22.0,12.0,True,False,True,True,31.021,62.764,47.515,57.666
-1,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,95.297,116.934,62.175,110.11
-2,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,3,47,0,2,6.0,6.0,12.0,2.0,True,False,True,True,95.04,114.065,62.66,109.219
-3,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,98.439,118.97,69.058,109.214
-4,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,5,45,0,2,6.0,10.0,16.0,6.0,True,False,True,True,96.251,126.517,70.65,114.912
-5,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,108.348,132.706,79.32,124.582
-6,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,5,45,0,2,6.0,10.0,16.0,6.0,True,False,True,True,95.935,122.161,65.398,111.684
-7,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,112.283,135.579,79.415,129.044
-8,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,5,45,0,2,6.0,10.0,16.0,6.0,True,False,True,True,104.18,132.585,72.106,125.023
-9,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,7,43,0,2,6.0,14.0,20.0,10.0,True,False,True,True,110.264,134.134,73.74,127.047
-10,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,95.508,115.653,65.87,108.67
-11,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,105.825,128.587,75.659,122.241
-12,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,5,45,0,2,6.0,10.0,16.0,6.0,True,False,True,True,104.134,126.243,69.197,117.166
-13,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,82.092,103.332,62.939,97.933
-14,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,6,44,0,2,6.0,12.0,18.0,8.0,True,False,True,True,91.973,113.072,58.34,109.297
-15,naive,50,10.0,6.0,2.0,none,passed_in,False,0.0,14,36,0,2,6.0,28.0,34.0,24.0,True,False,True,True,87.496,126.097,79.284,119.28
+run,strategy,workers,cap,seed_spent,cost,adapter,epsilon_source,db_constraint_present,isolation_level,naive_race_delay_ms,reserved_count,denied_count,error_count,expected_max_success,reads_in_window,reads_after_write,denied_after_write_read,max_observed_reserved,final_spent,final_reserved,total,overshoot,breach,i1_cap_safety,i2_ledger_agreement,i4_exactly_once,reserved_at_spread_ms,wall_ms,latency_p50_ms,latency_max_ms
+1,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.387,12.147,10.559,11.511
+2,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.073,7.407,6.519,7.351
+3,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.237,8.229,7.239,7.713
+4,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.089,6.536,5.684,6.03
+5,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.213,6.345,5.394,5.963
+6,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.099,8.483,7.368,8.419
+7,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.042,8.431,7.314,7.915
+8,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.136,7.835,6.681,7.319
+9,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.059,8.088,7.051,8.039
+10,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.107,7.41,6.367,7.358
+11,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.014,8.375,7.309,7.69
+12,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.188,8.472,7.189,7.914
+13,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.215,7.53,6.602,7.097
+14,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.124,8.633,7.349,8.537
+15,naive,2,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,2,0,0,2,2,0,0,0.0,6.0,4.0,10.0,0.0,False,True,True,True,0.238,7.165,6.196,6.638
+1,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.388,11.106,9.685,10.12
+2,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.316,12.686,9.946,12.591
+3,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.135,8.784,7.395,8.066
+4,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.296,9.007,7.33,8.315
+5,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.561,10.374,8.873,9.654
+6,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.353,11.086,8.704,10.553
+7,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.782,10.002,7.747,9.303
+8,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.592,10.639,9.014,10.013
+9,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.118,11.871,9.534,11.256
+10,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.784,9.952,8.473,9.091
+11,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.202,9.826,8.206,9.774
+12,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.688,10.414,8.73,9.742
+13,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.493,9.562,8.131,8.721
+14,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.508,9.897,8.245,9.239
+15,naive,3,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,0,0,2,3,0,0,0.0,6.0,6.0,12.0,2.0,True,False,True,True,0.26,10.08,8.249,9.397
+1,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.262,15.374,11.081,14.426
+2,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,4,1,0,2.0,6.0,10.0,16.0,6.0,True,False,True,True,2.833,14.71,10.072,13.6
+3,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.119,21.464,14.958,20.827
+4,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,1.735,13.496,9.764,12.342
+5,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,1.541,20.217,15.554,18.159
+6,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,1.461,15.005,10.546,13.875
+7,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,2,3,0,2.0,6.0,10.0,16.0,6.0,True,False,True,True,3.633,13.578,9.254,12.3
+8,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.292,16.524,11.398,15.69
+9,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,3.14,15.623,11.506,15.041
+10,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.406,15.211,11.115,14.666
+11,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.766,15.463,11.267,14.197
+12,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.533,15.649,11.058,15.009
+13,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,2.915,14.873,11.086,13.86
+14,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,1.884,15.668,10.771,14.727
+15,naive,5,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,0,0,2,5,0,0,0.0,6.0,10.0,16.0,6.0,True,False,True,True,1.258,20.034,13.522,19.061
+1,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,5,5,5,6.0,6.0,10.0,16.0,6.0,True,False,True,True,11.239,23.421,18.796,22.27
+2,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,3,7,5,10.0,6.0,10.0,16.0,6.0,True,False,True,True,13.319,21.496,14.707,19.399
+3,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,4,6,5,6.0,6.0,10.0,16.0,6.0,True,False,True,True,15.257,27.303,21.353,25.986
+4,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,6,0,2,3,7,6,8.0,6.0,8.0,14.0,4.0,True,False,True,True,12.996,21.378,14.399,20.522
+5,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,6,0,2,3,7,6,8.0,6.0,8.0,14.0,4.0,True,False,True,True,11.427,20.495,15.711,19.802
+6,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,5,5,5,10.0,6.0,10.0,16.0,6.0,True,False,True,True,15.503,25.757,17.664,24.37
+7,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,4,0,2,4,6,4,4.0,6.0,12.0,18.0,8.0,True,False,True,True,7.782,20.149,14.891,18.666
+8,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,4,6,5,8.0,6.0,10.0,16.0,6.0,True,False,True,True,14.144,23.385,16.805,22.583
+9,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,4,0,2,4,6,4,6.0,6.0,12.0,18.0,8.0,True,False,True,True,9.06,22.664,16.675,20.296
+10,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,3,7,5,10.0,6.0,10.0,16.0,6.0,True,False,True,True,15.331,23.036,17.235,22.255
+11,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,3,7,5,6.0,6.0,10.0,16.0,6.0,True,False,True,True,11.515,22.718,19.092,21.632
+12,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,5,0,2,3,7,5,10.0,6.0,10.0,16.0,6.0,True,False,True,True,17.199,25.929,18.678,24.299
+13,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,6,0,2,3,7,6,8.0,6.0,8.0,14.0,4.0,True,False,True,True,11.593,19.624,15.214,17.546
+14,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,6,0,2,2,8,6,8.0,6.0,8.0,14.0,4.0,True,False,True,True,15.065,23.191,15.764,21.512
+15,naive,10,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,6,0,2,3,7,6,8.0,6.0,8.0,14.0,4.0,True,False,True,True,12.066,20.26,13.952,19.368
+1,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,15,0,2,4,16,15,10.0,6.0,10.0,16.0,6.0,True,False,True,True,33.062,45.361,31.848,41.255
+2,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,7,13,0,2,6,14,13,14.0,6.0,14.0,20.0,10.0,True,False,True,True,28.242,41.278,29.072,36.708
+3,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,9,11,0,2,7,13,11,18.0,6.0,18.0,24.0,14.0,True,False,True,True,34.031,46.445,34.687,42.588
+4,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,15,0,2,5,15,15,10.0,6.0,10.0,16.0,6.0,True,False,True,True,35.244,48.372,30.454,47.475
+5,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,17,0,2,2,18,17,6.0,6.0,6.0,12.0,2.0,True,False,True,True,36.071,47.972,29.747,44.023
+6,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,17,0,2,2,18,17,6.0,6.0,6.0,12.0,2.0,True,False,True,True,36.394,48.147,28.606,47.218
+7,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,16,0,2,3,17,16,8.0,6.0,8.0,14.0,4.0,True,False,True,True,41.654,55.749,36.687,52.777
+8,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,15,0,2,5,15,15,10.0,6.0,10.0,16.0,6.0,True,False,True,True,38.147,51.684,35.298,50.524
+9,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,16,0,2,3,17,16,8.0,6.0,8.0,14.0,4.0,True,False,True,True,30.794,40.967,23.745,38.481
+10,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,15,0,2,4,16,15,10.0,6.0,10.0,16.0,6.0,True,False,True,True,41.442,54.713,34.724,52.402
+11,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,17,0,2,2,18,17,6.0,6.0,6.0,12.0,2.0,True,False,True,True,36.269,46.966,30.401,44.885
+12,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,14,0,2,5,15,14,12.0,6.0,12.0,18.0,8.0,True,False,True,True,36.408,50.146,33.04,46.465
+13,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,16,0,2,3,17,16,8.0,6.0,8.0,14.0,4.0,True,False,True,True,34.018,45.827,28.904,43.586
+14,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,17,0,2,2,18,17,6.0,6.0,6.0,12.0,2.0,True,False,True,True,40.796,52.669,34.376,49.585
+15,naive,20,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,16,0,2,3,17,16,8.0,6.0,8.0,14.0,4.0,True,False,True,True,37.976,50.179,31.037,47.868
+1,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,4,46,0,2,3,47,46,8.0,6.0,8.0,14.0,4.0,True,False,True,True,99.572,117.942,69.681,112.976
+2,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,45,0,2,5,45,45,10.0,6.0,10.0,16.0,6.0,True,False,True,True,107.031,130.652,69.405,120.998
+3,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,47,0,2,1,49,47,6.0,6.0,6.0,12.0,2.0,True,False,True,True,92.153,111.872,70.459,104.292
+4,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,7,43,0,2,6,44,43,14.0,6.0,14.0,20.0,10.0,True,False,True,True,99.189,141.953,74.992,121.579
+5,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,44,0,2,5,45,44,12.0,6.0,12.0,18.0,8.0,True,False,True,True,100.109,128.053,75.993,116.341
+6,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,3,47,0,2,3,47,47,6.0,6.0,6.0,12.0,2.0,True,False,True,True,99.215,118.025,71.144,113.032
+7,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,44,0,2,5,45,44,12.0,6.0,12.0,18.0,8.0,True,False,True,True,98.412,118.285,71.967,110.53
+8,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,45,0,2,5,45,45,10.0,6.0,10.0,16.0,6.0,True,False,True,True,107.71,125.973,72.536,117.232
+9,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,44,0,2,5,45,44,12.0,6.0,12.0,18.0,8.0,True,False,True,True,100.44,118.818,71.628,112.927
+10,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,7,43,0,2,5,45,43,14.0,6.0,14.0,20.0,10.0,True,False,True,True,80.592,101.669,54.529,97.625
+11,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,9,41,0,2,8,42,41,18.0,6.0,18.0,24.0,14.0,True,False,True,True,86.656,112.003,64.194,108.043
+12,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,44,0,2,5,45,44,12.0,6.0,12.0,18.0,8.0,True,False,True,True,105.195,128.278,68.462,114.706
+13,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,44,0,2,5,45,44,12.0,6.0,12.0,18.0,8.0,True,False,True,True,99.896,125.417,70.848,118.311
+14,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,6,44,0,2,5,45,44,12.0,6.0,12.0,18.0,8.0,True,False,True,True,102.766,122.211,67.057,116.997
+15,naive,50,10.0,6.0,2.0,none,passed_in,False,read committed,0.0,5,45,0,2,5,45,45,10.0,6.0,10.0,16.0,6.0,True,False,True,True,113.086,132.908,73.408,125.147
