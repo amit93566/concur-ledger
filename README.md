@@ -161,7 +161,7 @@ make opendp       # real OpenDP query -> real epsilon -> reserved, committed, en
 make demo-breach  # PRESENTATION: visual budget bar + per-worker stale-read trace
 make demo-safe    # PRESENTATION: identical load on atomic, cap holds
 make summary      # results/summary.html -- one-page evidence sheet, exp 1-4
-make report       # results/report.html  -- the argued, explanatory version
+make report       # results/report.html  -- problem, solution, graph per experiment
 make docs         # both of the above plus bundle-for-chat.md
 make exp1         # the breach, with breach rate vs N
 make exp1b        # the same breach inside ONE transaction -> still breaches

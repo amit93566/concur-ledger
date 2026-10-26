@@ -1,6 +1,6 @@
 .PHONY: help up down reset-db app app-stop app-logs psql health smoke \
         exp1 exp1b exp1c exp2 exp4 exp4-kill opendp exp-opendp mid-demo watch clean \
-        demo-breach demo-txn demo-safe report summary bundle docs
+        demo-breach demo-txn demo-safe demo-crash report run-report summary bundle figures docs
 
 BASE ?= http://localhost:8000
 PY   ?= .venv/bin/python
@@ -99,6 +99,10 @@ exp2:          ## Experiment 2 -- verify safety (atomic) under escalating conten
 	  --cap 10 --seed-spent 6 --cost 2 --workers 2,3,5,10,20,50,100 --runs 25 \
 	  --out results/exp2_atomic_vs_n.csv
 
+demo-crash:    ## DEMO -- Experiment 4 live: abort + one real kill, PASS/FAIL per check, no CSV
+	$(PY) experiments/crash_test.py --mode controlled-abort --runs 5
+	$(PY) experiments/crash_test.py --mode process-kill --runs 1
+
 exp4:          ## Experiment 4 -- controlled abort between reserve and commit
 	$(PY) experiments/crash_test.py --mode controlled-abort --runs 30 \
 	  --out results/exp4_controlled_abort.csv
@@ -129,7 +133,7 @@ watch:         ## live ledger view for the second terminal during the demo
 	watch -n0.2 'docker compose exec -T db psql -U postgres -d ledger \
 	  -c "SELECT name, epsilon_cap AS cap, epsilon_spent AS spent, \
 	      epsilon_reserved AS reserved, epsilon_spent+epsilon_reserved AS total \
-	      FROM datasets ORDER BY created_at DESC LIMIT 5;"'
+	      FROM datasets ORDER BY created_at DESC LIMIT 10;"'
 
 mid-demo:      ## the full mid-term evidence run, in order
 	@$(MAKE) reset-db
@@ -145,19 +149,33 @@ mid-demo:      ## the full mid-term evidence run, in order
 	@$(MAKE) docs
 	@echo "\nmid-term evidence complete -- CSVs in results/"
 
-report:        ## regenerate results/report.html from the CSVs (the argued version)
+run-report:    ## run Experiments 1, 2 and 4 fresh, then rebuild results/report.html
+	@curl -sf $(BASE)/health >/dev/null || { echo "service not up -- run 'make up' first"; exit 1; }
+	@$(MAKE) reset-db
+	@$(MAKE) exp1
+	@$(MAKE) exp2
+	@$(MAKE) exp4
+	@$(MAKE) exp4-kill
+	@$(MAKE) report
+	@echo "\nreport rebuilt from fresh runs -- open results/report.html"
+
+report:        ## regenerate results/report.html -- problem, solution and graph per experiment
 	$(PY) experiments/report.py
 
 summary:       ## regenerate results/summary.html -- one-page evidence sheet, exp 1-4
 	$(PY) experiments/summary.py
 
+figures:       ## regenerate results/*.png -- figures for slides and the dissertation
+	$(PY) experiments/figures.py
+
 bundle:        ## regenerate bundle-for-chat.md -- whole project as one file
 	$(PY) experiments/bundle.py
 
-docs:          ## all three generated documents
+docs:          ## all generated documents and figures
 	@$(MAKE) report
 	@$(MAKE) summary
+	@$(MAKE) figures
 	@$(MAKE) bundle
 
 clean:         ## remove generated results
-	rm -f results/*.csv
+	rm -f results/*.csv results/*.png

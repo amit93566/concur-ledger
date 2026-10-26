@@ -15,6 +15,7 @@ running" -- the harness is the evidence, this is its write-up.
 import argparse
 import csv
 import html
+import math
 import statistics
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -213,17 +214,6 @@ def bar_chart(labels, vals, vmax, yfmt, ylabel, var):
     return "".join(parts)
 
 
-def table(headers, rows, cls=""):
-    h = "".join(f"<th>{esc(x)}</th>" for x in headers)
-    b = "".join(
-        "<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows
-    )
-    return (
-        f'<div class="tw"><table class="{cls}"><thead><tr>{h}</tr></thead>'
-        f"<tbody>{b}</tbody></table></div>"
-    )
-
-
 # --------------------------------------------------------------------------
 # page
 # --------------------------------------------------------------------------
@@ -282,6 +272,9 @@ pre{background:var(--codebg);border:1px solid var(--line);border-radius:10px;
 code{background:var(--codebg);padding:1px 5px;border-radius:4px;font-size:12.5px;
  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .q{margin:6px 0}
+.lbl{display:inline-block;min-width:88px;margin-right:6px;font-weight:650;color:var(--ink);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.num{font:600 11px/1 ui-monospace,monospace;letter-spacing:.08em;color:var(--ink3);border:1px solid var(--line);border-radius:4px;padding:4px 6px;margin-right:10px;vertical-align:3px}
+.scen{font-size:14px;color:var(--ink2)}
 pre.cmd{background:var(--codebg);border:1px solid var(--line);color:var(--ink2);
  padding:10px 14px;font-size:12.5px;margin:12px 0 4px}
 h2{border-top:1px solid var(--line);padding-top:26px}
@@ -299,729 +292,198 @@ for _tok, _hex in (
     CSS = CSS.replace(_tok, _hex)
 
 
-def _inv_cell(rows, inv):
-    """Pass count for one invariant across the crash-test checks."""
-    rs = [r for r in rows if r["invariant"] == inv]
-    if not rs:
-        return '<span class="ok">verified</span>'
-    p = sum(1 for r in rs if r["passed"])
-    cls = "ok" if p == len(rs) else "bad"
-    return f'<span class="{cls}">{p}/{len(rs)} checks</span>'
+def pass_bars(groups):
+    """groups: [(label, passed, total)] -> horizontal pass-share bars.
+
+    Experiment 4 has no sweep axis, only checks that pass or fail, so the honest
+    picture is one bar per invariant filled to its pass share.
+    """
+    row_h, lab_w, bar_w = 34, 230, W - 230 - PAD_R - 70
+    h = row_h * len(groups) + 8
+    parts = [
+        f'<svg viewBox="0 0 {W} {h}" role="img" class="chart" '
+        'aria-label="crash-test checks passed, by invariant">'
+    ]
+    for i, (label, p, t) in enumerate(groups):
+        y = 4 + i * row_h
+        share = p / t if t else 0
+        var = "--safe" if p == t else "--naive"
+        parts.append(
+            f'<text x="0" y="{y+19}" class="tick" style="font-size:12.5px;'
+            f'fill:var(--ink2)">{esc(label)}</text>'
+            f'<rect x="{lab_w}" y="{y+6}" width="{bar_w}" height="18" rx="4" '
+            'style="fill:var(--line)"/>'
+            f'<rect x="{lab_w}" y="{y+6}" width="{bar_w*share:.1f}" height="18" '
+            f'rx="4" style="fill:var({var})"><title>{esc(label)}: {p}/{t}'
+            "</title></rect>"
+            f'<text x="{lab_w+bar_w+10}" y="{y+20}" class="dlabel">{p}/{t}</text>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def exp(num, title, problem, solution, solution_label, body):
+    return (
+        f'<h2><span class="num">EXP {esc(num)}</span>{esc(title)}</h2>'
+        f'<p class="q"><span class="lbl">Problem</span>{problem}</p>'
+        f'<p class="q"><span class="lbl">{esc(solution_label)}</span>{solution}</p>'
+        f"{body}"
+    )
 
 
 def build():
     naive = read("exp1_naive_vs_n.csv")
     atomic = read("exp2_atomic_vs_n.csv")
-    ctrl = read("exp1_naive_sequential_control.csv")
-    # Optional: the single-transaction naive variant. Absent until `make exp1b`
-    # has been run, and the page simply omits its section in that case.
-    txn = read("exp1b_naive_txn_vs_n.csv")
-    # Optional: the race-window sweep (fixed N, varying NAIVE_RACE_DELAY_MS).
-    # Absent until `make exp1c` has run; the plateau then keeps the observational
-    # half and omits the intervention rather than asserting it.
-    win = read("exp1c_race_window_vs_delay.csv")
     if not naive or not atomic:
         raise SystemExit("missing results CSVs -- run `make exp1 exp2` first")
 
-    gn, ga, gc, gt = by_n(naive), by_n(atomic), by_n(ctrl), by_n(txn)
+    gn, ga = by_n(naive), by_n(atomic)
     ns = sorted(set(gn) | set(ga))
     labels = [str(n) for n in ns]
 
     def rate(g, n):
-        """Breach rate at N, or None if that strategy was never run at that N.
-
-        None, not 0.0: the axis is the union of the naive and atomic sweeps,
-        and naive stops at N=50 while atomic goes to N=100. Zero-filling would
-        plot naive at a 0% breach rate for a run that never happened.
-        """
+        # None, not 0.0: naive stops at N=50 while atomic goes to N=100, and a
+        # zero-filled naive line would read as "naive was safe there".
         if n not in g:
             return None
         return sum(1 for r in g[n] if r["breach"]) / len(g[n]) * 100
 
-    nb = [rate(gn, n) for n in ns]
-    ab = [rate(ga, n) for n in ns]
+    def granted(g, n):
+        if n not in g:
+            return None
+        return statistics.mean(r["reserved_count"] for r in g[n])
 
     cap = naive[0]["cap"]
+    seed = naive[0]["seed_spent"]
     cost = naive[0]["cost"]
-    legal = int((cap - naive[0]["seed_spent"]) // cost)
+    legal = int((cap - seed) // cost)
     max_grant = max(r["reserved_count"] for r in naive)
     max_over = max(r["overshoot"] for r in naive)
-    worst_mult = (max_over + cap) / cap
     a_runs = len(atomic)
     a_breaches = sum(1 for r in atomic if r["breach"])
-    first_breach_n = next((n for n in ns if n in gn and rate(gn, n) == 100), None)
+    over = [r for r in naive if r["workers"] > legal]
+    over_rate = sum(1 for r in over if r["breach"]) / len(over) * 100
     a_exact = all(r["reserved_count"] == legal for r in atomic)
-
-    ov_ns = [n for n in ns if n in gn]
-    ov = [statistics.mean(r["overshoot"] for r in gn[n]) for n in ov_ns]
-    sp_ns = [n for n in ns if n in ga]
-    sp = [statistics.median(r["reserved_at_spread_ms"] for r in ga[n]) for n in sp_ns]
 
     P = []
     A = P.append
     A('<div class="wrap">')
     A("<h1>Can a shared privacy budget survive concurrent use?</h1>")
     A(
-        f'<p class="sub">Measured results · generated from '
-        f"<code>results/*.csv</code> at "
-        f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}. '
-        "Not a live view of the system.</p>"
+        f'<p class="sub">Generated from <code>results/*.csv</code> at '
+        f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.</p>'
     )
     A(
-        "<p>One dataset, one finite budget (ε), many jobs arriving at once. "
-        f"With a cap of {cap:g} and {naive[0]['seed_spent']:g} already spent, "
-        f"exactly <strong>{legal}</strong> reservations of ε&nbsp;{cost:g} fit. "
-        "Here is what each enforcement implementation actually granted.</p>"
-    )
-    # ONE NAME FOR THE BUG. The anomaly is called *write skew* here and in
-    # every other artefact (README, summary, bundle, source comments). "read →
-    # check → write" names the code shape and "race window" names the gap in
-    # time -- they are different referents and are never used as a second name
-    # for the anomaly itself.
-    A(
-        '<p class="note"><strong>The name for what goes wrong: write '
-        "skew.</strong> Each request reads the budget, decides its own "
-        "reservation fits, and writes — and every one of those decisions was "
-        "valid against the state it read. The cap is broken only by the "
-        "combination. This page uses <em>write skew</em> throughout for the "
-        "anomaly, <em>read → check → write</em> for the code shape that admits "
-        "it, and <em>race window</em> for the gap between the read and the "
-        "write.</p>"
+        f'<div class="card scen">Setup: cap <strong>{cap:g}</strong>, already '
+        f"spent <strong>{seed:g}</strong>. Each job reserves ε&nbsp;{cost:g}, so "
+        f"exactly <strong>{legal}</strong> can legally be granted.</div>"
     )
 
-    A('<div class="tiles">')
+    # --- EXP 1 ----------------------------------------------------------------
     A(
-        f'<div class="tile"><div class="n naive">{max_grant}</div>'
-        f'<div class="l">reservations granted by the naive path where only '
-        f"{legal} were legal</div></div>"
-    )
-    A(
-        f'<div class="tile"><div class="n naive">{worst_mult:.1f}×</div>'
-        f'<div class="l">worst overspend of the cap ({cap + max_over:g} against '
-        f"{cap:g})</div></div>"
-    )
-    A(
-        f'<div class="tile"><div class="n safe">{a_breaches} / {a_runs}</div>'
-        f'<div class="l">breaches under the atomic strategy, to N={max(ns)}</div></div>'
-    )
-    A("</div>")
-
-    # --- breach rate ------------------------------------------------------
-    A(
-        "<h2>Experiment 1 · Can the naive path be made to overspend?</h2>"
-        '<p class="q"><strong>Question.</strong> Does a faithful '
-        "read&nbsp;→&nbsp;check&nbsp;→&nbsp;write enforcement implementation "
-        "overspend a shared cap under genuine concurrency?</p>"
-        '<p class="q"><strong>Method.</strong> Seed the budget near the cap '
-        f"(cap {cap:g}, spent {naive[0]['seed_spent']:g}), drop the database "
-        "CHECK constraint, then fire N simultaneous reserves of "
-        f"ε&nbsp;{cost:g} — each individually legal, collectively not. "
-        f"{len(gn[ns[0]]) if ns[0] in gn else 15} runs per level.</p>"
-        '<pre class="cmd">make exp1</pre>'
-    )
-    A(
-        "<p>The naive implementation breaches the cap on "
-        f"<strong>every run</strong> from N={first_breach_n} upward. The atomic "
-        "implementation never does, at any concurrency tested.</p>"
-    )
-    A('<div class="card">')
-    A(
-        '<div class="legend">'
-        '<span><i style="background:var(--naive)"></i>naive (read → check → write)</span>'
-        '<span><i style="background:var(--safe)"></i>atomic (conditional UPDATE)</span>'
-        "</div>"
-    )
-    A(
-        line_chart(
-            labels,
-            [
-                ("naive", nb, "--naive", "naive"),
-                ("atomic", ab, "--safe", "atomic"),
-            ],
-            100,
-            lambda v: f"{v:.0f}%",
-            "runs that breached the cap",
-            "breach",
+        exp(
+            "1",
+            "The breach",
+            "Many jobs check the remaining budget at the same moment. Each sees "
+            "room, each reserves, and together they overspend the cap "
+            "(<em>write skew</em>). Does a plain read → check → write "
+            "implementation actually fail this way?",
+            f"Yes. Once more than {legal} jobs compete, the naive path breaches "
+            f"in <strong>{over_rate:.0f}%</strong> of runs, granting up to <strong>{max_grant}</strong> "
+            f"reservations where {legal} fit, and overspending the cap by up to "
+            f"ε&nbsp;{max_over:g} (<strong>{(cap + max_over) / cap:.1f}×</strong>).",
+            "Result",
+            '<div class="card">'
+            + line_chart(
+                [str(n) for n in gn],
+                [("naive", [rate(gn, n) for n in gn], "--naive", "naive")],
+                100,
+                lambda v: f"{v:.0f}%",
+                "runs that breached the cap",
+                "breach",
+            )
+            + "</div>",
         )
-    )
-    A("</div>")
-    A(
-        '<p class="note"><strong>N=2 is a control, not a failure to breach.</strong> '
-        f"Two reservations of ε&nbsp;{cost:g} fit exactly into the "
-        f"{cap - naive[0]['seed_spent']:g} of headroom, so a correct system grants "
-        "both. The naive path only fails once demand genuinely exceeds supply — "
-        "which is the point.</p>"
-    )
-    naive_max, atomic_max = max(gn), max(ga)
-    if atomic_max > naive_max:
-        A(
-            f'<p class="note">The naive line <strong>stops at N={naive_max}</strong> '
-            f"because that is as far as it was run; the atomic sweep continues to "
-            f"N={atomic_max}. The gap is missing data, not a measured 0% — naive "
-            f"has never been observed to be safe at N&gt;{naive_max}, and the "
-            "chart does not claim it was.</p>"
     )
 
-    rows = []
-    for n in ns:
-        nr = f"{rate(gn,n):.0f}%" if n in gn else "—"
-        ar = f"{rate(ga,n):.0f}%" if n in ga else "—"
-        g = (
-            f"{statistics.mean(r['reserved_count'] for r in gn[n]):.1f}"
-            if n in gn
-            else "—"
-        )
-        rows.append(
-            [
-                n,
-                len(gn.get(n, [])) or "—",
-                f'<span class="{"bad" if n in gn and rate(gn,n) else "ok"}">{nr}</span>',
-                f'<span class="ok">{ar}</span>',
-                g,
-                legal,
-            ]
-        )
+    # --- EXP 2 ----------------------------------------------------------------
     A(
-        table(
-            ["N", "runs", "naive breach", "atomic breach", "naive granted", "legal"],
-            rows,
-        )
-    )
-    # --- overshoot --------------------------------------------------------
-    A("<h3>How far past the cap</h3>")
-    A(
-        "<p>Breach rate says it happened; overshoot says how badly. Mean ε "
-        "granted beyond the cap, by concurrency:</p>"
-    )
-    A('<div class="card">')
-    A(
-        bar_chart(
-            [str(n) for n in ov_ns],
-            ov,
-            max(max(ov) * 1.25, 1),
-            lambda v: f"{v:.1f}",
-            "mean overshoot (ε past the cap)",
-            "--naive",
-        )
-    )
-    A("</div>")
-    A(
-        '<p class="note"><strong>Overshoot is not monotonic in N.</strong> It '
-        "peaks in the middle of the range and then flattens. The mechanism is no "
-        "longer a guess — it is measured two ways below, and it is not that "
-        "contention stops mattering. The number of callers that win the race "
-        "saturates while N keeps growing.</p>"
-    )
-
-    # --- the plateau mechanism, measured ----------------------------------
-    # Was a labelled hypothesis until the read-position columns existed. Both
-    # halves are reported: the observation (window share vs N, from this same
-    # sweep) and the intervention (exp1c, widening the window at fixed N). The
-    # intervention is what makes the claim causal rather than merely consistent.
-    A("<h3>Why it plateaus: the race window, counted</h3>")
-    A(
-        "<p>Every naive caller reports the values it read in statement 1. Because "
-        "each reservation increments <code>epsilon_reserved</code> from a seeded "
-        "zero, that read <em>is</em> a position in the write sequence: read "
-        "<code>reserved&nbsp;=&nbsp;0</code> and no peer's write was visible yet — "
-        "the caller was inside the race window. Read anything above zero and it "
-        "lost the window, and the denial it got was legitimate.</p>"
-    )
-    win_ns = [n for n in ns if n in gn and gn[n][0].get("reads_in_window") not in (None, "")]
-    if win_ns:
-        wshare = [
-            statistics.mean(r["reads_in_window"] for r in gn[n]) / n * 100
-            for n in win_ns
-        ]
-        wgrant = [statistics.mean(r["reserved_count"] for r in gn[n]) for n in win_ns]
-        # The largest N at which the window still holds essentially everyone --
-        # the honest top of the range, rather than N=2, which does not breach.
-        hi_n, hi_share = max(
-            ((n, s) for n, s in zip(win_ns, wshare) if s >= 90),
-            default=(win_ns[0], wshare[0]),
-        )
-        A('<div class="card">')
-        A(
+        exp(
+            "2",
+            "The fix",
+            "Can the cap be enforced under the same concurrent load without "
+            "locks or a new architecture?",
+            "Move the check into the write: one conditional <code>UPDATE</code>. "
+            "There is no gap between check and write for another job to slip "
+            f"into. <strong>{a_breaches}/{a_runs}</strong> runs breached, up to "
+            f"N={max(ga)}, and "
+            + (
+                f"every run granted <strong>exactly {legal}</strong>."
+                if a_exact
+                else "grant counts varied."
+            ),
+            "Solution",
+            "<pre>UPDATE datasets\n"
+            "   SET epsilon_reserved = epsilon_reserved + :cost\n"
+            " WHERE id = :id\n"
+            "   AND epsilon_spent + epsilon_reserved + :cost &lt;= epsilon_cap;\n"
+            "<em>-- rowcount 1 -&gt; reserved · rowcount 0 -&gt; denied</em></pre>"
+            '<div class="card">'
             '<div class="legend">'
-            '<span><i style="background:var(--naive)"></i>share of callers inside '
-            "the race window</span></div>"
-        )
-        A(
-            line_chart(
-                [str(n) for n in win_ns],
-                [("in window", wshare, "--naive", None)],
-                100,
-                lambda v: f"{v:.0f}%",
-                "callers that read pre-write state",
-                "window",
-            )
-        )
-        A("</div>")
-        A(
-            table(
-                ["N", "read in window", "share of N", "granted", "legal"],
+            '<span><i style="background:var(--naive)"></i>naive</span>'
+            '<span><i style="background:var(--safe)"></i>atomic</span>'
+            "</div>"
+            + line_chart(
+                labels,
                 [
-                    [
-                        n,
-                        f"{statistics.mean(r['reads_in_window'] for r in gn[n]):.2f}",
-                        f"{s:.0f}%",
-                        f"{g:.2f}",
-                        legal,
-                    ]
-                    for n, s, g in zip(win_ns, wshare, wgrant)
+                    ("naive", [granted(gn, n) for n in ns], "--naive", "naive"),
+                    ("atomic", [granted(ga, n) for n in ns], "--safe", "atomic"),
                 ],
+                4 * math.ceil(max_grant * 1.1 / 4),
+                lambda v: f"{v:.0f}",
+                f"reservations granted (mean) · legal = {legal}",
+                "granted",
             )
+            + "</div>",
         )
-        A(
-            f"<p>Nearly every caller is still inside the window at the low levels "
-            f"({hi_share:.0f}% at N={hi_n}); by N={win_ns[-1]} only "
-            f"{wshare[-1]:.0f}% are, while the number granted stays "
-            f"near {statistics.mean(wgrant[-3:]):.1f}. More contention does not "
-            "produce more successful overspending: it produces more callers "
-            "arriving after the writes have already landed, who are then correctly "
-            "denied. The overspend is bounded by how many callers fit inside the "
-            "window, not by how many are competing.</p>"
-        )
-        A(
-            '<p class="note">The sequential control makes the same point from the '
-            "other side: run one at a time, exactly <strong>one</strong> caller "
-            "ever reads pre-write state, and nothing is overspent.</p>"
-        )
-
-    # The intervention: hold N fixed, widen the window itself.
-    gw = by_n_key(win, "naive_race_delay_ms")
-    if gw:
-        wn = win[0]["workers"]
-        ds = sorted(gw)
-        A("<h4>The intervention: widen the window and every caller wins</h4>")
-        A(
-            "<p>Observation alone cannot show the window is the <em>cause</em>. "
-            f"So: hold N fixed at {wn} and vary the window directly with "
-            "<code>NAIVE_RACE_DELAY_MS</code>, an artificial pause between the "
-            "read and the write standing in for whatever work a real service does "
-            "there. Nothing else changes.</p>"
-            '<pre class="cmd">make exp1c</pre>'
-        )
-        ceiling = naive[0]["seed_spent"] + wn * cost - cap
-        A('<div class="card">')
-        A(
-            line_chart(
-                [f"{d:g}" for d in ds],
-                [
-                    (
-                        "in window",
-                        [
-                            statistics.mean(r["reads_in_window"] for r in gw[d])
-                            / wn
-                            * 100
-                            for d in ds
-                        ],
-                        "--naive",
-                        "in window",
-                    ),
-                    (
-                        "granted",
-                        [
-                            statistics.mean(r["reserved_count"] for r in gw[d])
-                            / wn
-                            * 100
-                            for d in ds
-                        ],
-                        "--safe",
-                        "granted",
-                    ),
-                ],
-                100,
-                lambda v: f"{v:.0f}%",
-                f"share of the {wn} callers",
-                "window-delay",
-                xlabel="artificial race-window width (ms)",
-                xtip=lambda lab: f"delay {lab}ms",
-            )
-        )
-        A("</div>")
-        A(
-            table(
-                [
-                    "delay (ms)",
-                    "runs",
-                    "read in window",
-                    "granted",
-                    "mean overshoot",
-                    "breach",
-                ],
-                [
-                    [
-                        f"{d:g}",
-                        len(gw[d]),
-                        f"{statistics.mean(r['reads_in_window'] for r in gw[d]):.2f}"
-                        f" / {wn}",
-                        f"{statistics.mean(r['reserved_count'] for r in gw[d]):.2f}",
-                        f"{statistics.mean(r['overshoot'] for r in gw[d]):.2f}",
-                        f'<span class="bad">'
-                        f"{sum(1 for r in gw[d] if r['breach'])/len(gw[d]):.0%}</span>",
-                    ]
-                    for d in ds
-                ],
-            )
-        )
-        A(
-            f"<p>Monotonic, and it saturates where the arithmetic says it must: at "
-            f"{max(ds):g}&nbsp;ms every one of the {wn} callers reads pre-write "
-            f"state, every one is granted, and the overshoot reaches "
-            f"ε&nbsp;{ceiling:g} — the most that {wn} reservations of "
-            f"ε&nbsp;{cost:g} can overspend a cap of {cap:g} seeded at "
-            f"{naive[0]['seed_spent']:g}. <strong>The plateau is therefore a "
-            "property of the window, not of the concurrency.</strong> At "
-            "<code>delay=0</code> the window is narrower than the spread of "
-            "arrivals, so most callers miss it; widen it past the spread and the "
-            "breach is total.</p>"
-        )
-        A(
-            '<p class="note"><strong>What this does not license.</strong> The '
-            "delay is an instrument, not a claim about production timings — it "
-            "stands in for application work whose real duration is unmeasured "
-            "here. What is established is the direction and the ceiling: window "
-            "width sets how much can be overspent, and the breach conclusion at "
-            "<code>delay=0</code> needs no instrument at all.</p>"
-        )
-
-    # --- the control ------------------------------------------------------
-    A("<h3>Control: the naive path is faithful, not a strawman</h3>")
-    A(
-        "<p>The obvious objection is that the naive implementation was written to "
-        "fail. The control answers it: the <em>same code</em>, the same requests, "
-        "issued one at a time instead of simultaneously.</p>"
-    )
-    if gc:
-        crows = [
-            [
-                n,
-                len(gc[n]),
-                f'<span class="ok">{sum(1 for r in gc[n] if r["breach"])/len(gc[n]):.0%}</span>',
-                f"{statistics.mean(r['reserved_count'] for r in gc[n]):.2f}",
-                legal,
-            ]
-            for n in sorted(gc)
-        ]
-        A(table(["N", "runs", "breach rate", "granted", "legal"], crows))
-    A(
-        "<p>Zero breaches, and exactly the number that fit. The logic is correct; "
-        "only concurrency breaks it. That is what makes it a plausible first "
-        "implementation rather than a sabotaged one.</p>"
     )
 
-    # --- second control: the transaction boundary is not the cause --------
-    if gt:
-        A("<h3>Second control: wrapping it in one transaction does not help</h3>")
-        A(
-            "<p>The next objection is that the naive path used <em>two</em> "
-            "transactions, so the write skew was an artefact of the split. "
-            "<code>naive_txn</code> "
-            "answers that: read, check and write inside a <strong>single</strong> "
-            "transaction — what a competent engineer writes when told to make it "
-            "transactional — under the same seed and load.</p>"
-            '<pre class="cmd">make exp1b</pre>'
-        )
-        trows = []
-        for n in sorted(set(gn) | set(gt)):
-            # rate() already returns 0-100, so format as a plain number.
-            nrate = f"{rate(gn, n):.0f}%" if n in gn else "—"
-            trate = f"{rate(gt, n):.0f}%" if n in gt else "—"
-            tgrant = (
-                f"{statistics.mean(r['reserved_count'] for r in gt[n]):.2f}"
-                if n in gt
-                else "—"
-            )
-            cls = "bad" if n in gt and rate(gt, n) else "ok"
-            trows.append(
-                [
-                    n,
-                    len(gt.get(n, [])) or "—",
-                    f'<span class="{"bad" if n in gn and rate(gn,n) else "ok"}">{nrate}</span>',
-                    f'<span class="{cls}">{trate}</span>',
-                    tgrant,
-                    legal,
-                ]
-            )
-        A(
-            table(
-                [
-                    "N",
-                    "runs",
-                    "naive (2 txn)",
-                    "naive_txn (1 txn)",
-                    "granted",
-                    "legal",
-                ],
-                trows,
-            )
-        )
-        A(
-            "<p>The same breach profile, at every level. The transaction boundary "
-            "is not what makes the naive path unsafe. At READ COMMITTED a plain "
-            "<code>SELECT</code> takes no lock, each statement takes a fresh "
-            "snapshot, and the write carries no predicate — so there is nothing "
-            "for the database to re-check. What matters is <em>where the decision "
-            "is taken</em>, not how many transactions it spans.</p>"
-        )
-        A(
-            '<p class="note">Note this is <strong>not a lost update</strong>: every '
-            "increment applies and none is overwritten — I2 holds in "
-            f"{sum(1 for r in txn if r['i2_ledger_agreement'])}/{len(txn)} runs. "
-            "It is the same <strong>write skew</strong> named at the top of this "
-            "page, now shown to survive being wrapped in a single "
-            "transaction.</p>"
-        )
-
-    # --- concurrency validity --------------------------------------------
-    A(
-        "<h3>Was the contention real?</h3>"
-    )
-    A(
-        "<p>If the harness had serialised its requests, none of the above would "
-        "mean anything. Every run records the wall-clock spread of the arrival "
-        "timestamps Postgres itself wrote — median, by concurrency:</p>"
-    )
-    A('<div class="card">')
-    A(
-        line_chart(
-            [str(n) for n in sp_ns],
-            [("spread", sp, "--safe", None)],
-            max(max(sp) * 1.25, 1),
-            lambda v: f"{v:.0f}ms",
-            "median arrival spread (ms)",
-            "spread",
-        )
-    )
-    A("</div>")
-    A(
-        f"<p>At N={sp_ns[0]} the arrivals cluster within "
-        f"{sp[0]:.2f}&nbsp;ms — genuinely simultaneous. "
-        "<strong>Measurement-validity caveat:</strong> the harness and the server "
-        "share one machine, so the growth at the top of the range "
-        f"({sp[-1]:.0f}&nbsp;ms at N={sp_ns[-1]}) is partly client-side scheduling, "
-        "not database behaviour. This does not affect the safety conclusions — a "
-        "breach either happened or it did not — but the cost sweep that follows in "
-        "the next phase will need a no-op baseline and a stated saturation point.</p>"
-    )
-
-    # --- the mechanism ----------------------------------------------------
-    A("<h2>Experiment 2 · Does the atomic path hold?</h2>")
-    A(
-        '<p class="q"><strong>Question.</strong> Under the identical seed and '
-        "load, and with the database CHECK still dropped, does a single "
-        "conditional UPDATE prevent every breach?</p>"
-        '<p class="q"><strong>Method.</strong> Same harness, '
-        f"<code>strategy=atomic</code>, escalating deliberately to N={max(ns)} "
-        f"trying to force a breach. {len(atomic)} runs total.</p>"
-        '<pre class="cmd">make exp2</pre>'
-    )
-    A('<div class="tiles">')
-    A(
-        f'<div class="tile"><div class="n safe">{a_breaches}/{a_runs}</div>'
-        '<div class="l">runs that breached the cap</div></div>'
-    )
-    A(
-        f'<div class="tile"><div class="n safe">'
-        f'{"exactly " + str(legal) if a_exact else "varies"}</div>'
-        "<div class=\"l\">reservations granted per run — the denial count is "
-        "not merely safe, it is correct</div></div>"
-    )
-    A(
-        f'<div class="tile"><div class="n safe">N={max(ns)}</div>'
-        '<div class="l">highest concurrency tested without a breach</div></div>'
-    )
-    A("</div>")
-    A(
-        "<p>The breach-rate chart above already carries this result: the atomic "
-        f"line sits flat on zero at every level. Across all {a_runs} runs, "
-        f"{'every run granted exactly the ' + str(legal) + ' reservations that fit'
-           if a_exact else 'grant counts varied'}.</p>"
-    )
-
-    A("<h3>The difference, in full</h3>")
-    A(
-        "<p>Not an architecture change. The cap check moves out of the application "
-        "and into the write itself.</p>"
-    )
-    A('<div class="two">')
-    A(
-        '<div><h3 class="naive">naive — breaches</h3><pre>'
-        "<em>-- transaction 1</em>\nSELECT epsilon_spent, epsilon_reserved,\n"
-        "       epsilon_cap\n  FROM datasets WHERE id = :id;\n"
-        "<em>-- transaction ends. no lock held.</em>\n\n"
-        "<em># the check, in Python, on stale values</em>\n"
-        "if spent + reserved + cost &lt;= cap:\n\n"
-        "<em>-- transaction 2: unconditional</em>\n    UPDATE datasets\n"
-        "       SET epsilon_reserved =\n           epsilon_reserved + :cost\n"
-        "     WHERE id = :id;</pre>"
-        "<p>Concurrent callers all read the same values, all pass the check, "
-        "all write.</p></div>"
-    )
-    A(
-        '<div><h3 class="safe">atomic — holds</h3><pre>'
-        "UPDATE datasets\n   SET epsilon_reserved =\n       epsilon_reserved + :cost\n"
-        " WHERE id = :id\n   AND epsilon_spent\n     + epsilon_reserved\n"
-        "     + :cost &lt;= epsilon_cap\nRETURNING epsilon_spent,\n"
-        "          epsilon_reserved;\n\n"
-        "<em>-- rowcount 1 -&gt; reserved</em>\n"
-        "<em>-- rowcount 0 -&gt; denied</em></pre>"
-        "<p>One statement. There is nothing between the check and the write for "
-        "another transaction to interleave with.</p></div>"
-    )
-    A("</div>")
-
-    # --- invariants -------------------------------------------------------
-    A("<h2>Experiment 4 · Can a crash corrupt the ledger?</h2>")
-    ca = read("exp4_controlled_abort.csv")
-    pk = read("exp4_process_kill.csv")
-    if ca or pk:
-        tot = len(ca) + len(pk)
-        passed = sum(1 for r in ca + pk if r["passed"])
-        A(
-            '<p class="q"><strong>Question.</strong> If the service dies between '
-            "reserving budget and committing it, can the ledger be left "
-            "inconsistent — budget lost, double-spent, or disagreeing with its "
-            "own records?</p>"
-            '<p class="q"><strong>Method.</strong> Two fault modes. A '
-            "<em>controlled abort</em> reserves and then deliberately fails "
-            "before commit; a <em>process kill</em> hard-exits the service "
-            "(<code>os._exit</code>) inside the same window and lets Docker "
-            "restart it. The controlled abort tests the same protocol property "
-            "and is reproducible on every attempt; the kill is corroboration.</p>"
-            '<pre class="cmd">make exp4        # controlled abort\n'
-            "make exp4-kill   # real process kill</pre>"
-        )
-        A('<div class="tiles">')
-        A(
-            f'<div class="tile"><div class="n safe">{passed}/{tot}</div>'
-            '<div class="l">fault-injection checks passed</div></div>'
-        )
-        for label, rs in (("controlled abort", ca), ("process kill", pk)):
+    # --- EXP 4 ----------------------------------------------------------------
+    crash = read("exp4_controlled_abort.csv") + read("exp4_process_kill.csv")
+    if crash:
+        meaning = {
+            "I1": "I1 · cap never exceeded",
+            "I2": "I2 · ledger matches its records",
+            "I3": "I3 · settled stays settled",
+            "I4": "I4 · retry charges once",
+        }
+        groups = []
+        for inv, label in meaning.items():
+            rs = [r for r in crash if r["invariant"] == inv]
             if rs:
-                A(
-                    f'<div class="tile"><div class="n safe">'
-                    f'{sum(1 for r in rs if r["passed"])}/{len(rs)}</div>'
-                    f'<div class="l">{label}</div></div>'
-                )
-        A("</div>")
-        rows = []
-        for r in ca + pk:
-            v = (
-                '<span class="ok">PASS</span>'
-                if r["passed"]
-                else '<span class="bad">FAIL</span>'
-            )
-            rows.append(
-                [
-                    esc(r["mode"]),
-                    esc(r["check"]),
-                    f'<strong>{esc(r["invariant"])}</strong>',
-                    v,
-                    f'<span class="det">{esc(r["detail"])}</span>',
-                ]
-            )
-        A(table(["mode", "check", "inv.", "result", "observed"], rows))
+                groups.append((label, sum(1 for r in rs if r["passed"]), len(rs)))
+        passed = sum(1 for r in crash if r["passed"])
         A(
-            '<p class="note"><strong>Budget survives a crash as a hold — never '
-            "as a loss and never as a double-spend.</strong> A reservation "
-            "orphaned by a crash stays <code>reserved</code>, and is released "
-            "explicitly rather than reclaimed on a timer. Because the record row "
-            "and the running columns move in one transaction, I2 cannot drift: a "
-            "partial write is not a state the database can be left in.</p>"
+            exp(
+                "4",
+                "Survive a crash",
+                "If the service dies between reserving budget and committing it, "
+                "can budget be lost, double-spent, or left inconsistent?",
+                "Two-phase <strong>reserve → commit | release</strong>, with the "
+                "job running outside any transaction. A crash leaves the budget "
+                "<em>held</em>, never lost. A retried commit is recognised by its "
+                f"idempotency key. <strong>{passed}/{len(crash)}</strong> checks "
+                "passed under both a controlled abort and a real process kill.",
+                "Solution",
+                f'<div class="card">{pass_bars(groups)}</div>',
+            )
         )
-    else:
-        A(
-            "<p>No crash-test results found. Run <code>make exp4</code> and "
-            "<code>make exp4-kill</code>, then regenerate.</p>"
-        )
-    A("<h2>Invariants across all experiments</h2>")
-    n_i1 = sum(1 for r in naive if r["i1_cap_safety"])
-    n_i2 = sum(1 for r in naive if r["i2_ledger_agreement"])
-    a_i1 = sum(1 for r in atomic if r["i1_cap_safety"])
-    a_i2 = sum(1 for r in atomic if r["i2_ledger_agreement"])
-    ok = lambda c, t: f'<span class="ok">{c}/{t}</span>'
-    bad = lambda c, t: f'<span class="bad">{c}/{t}</span>'
-    A(
-        table(
-            ["invariant", "meaning", "Exp 1 (naive)", "Exp 2 & 4 (safe path)"],
-            [
-                [
-                    "<strong>I1</strong> cap safety",
-                    "spent + reserved ≤ cap",
-                    bad(n_i1, len(naive)),
-                    ok(a_i1, len(atomic)),
-                ],
-                [
-                    "<strong>I2</strong> ledger agreement",
-                    "running columns = sum of record rows",
-                    ok(n_i2, len(naive)),
-                    ok(a_i2, len(atomic)),
-                ],
-                [
-                    "<strong>I3</strong> terminal states",
-                    "a settled reservation never changes again",
-                    "—",
-                    _inv_cell(ca + pk, "I3"),
-                ],
-                [
-                    "<strong>I4</strong> exactly-once",
-                    "a retried commit charges once",
-                    "—",
-                    _inv_cell(ca + pk, "I4"),
-                ],
-            ],
-        )
-    )
-    A(
-        '<p class="note"><strong>The naive path violates I1 but not I2.</strong> '
-        "It overspends the cap — a policy violation — while leaving the ledger "
-        "internally consistent. Overspending and corruption are different "
-        "failures, and only the first one happens here. I3 and I4 are verified "
-        "behaviourally by the crash tests rather than per-run.</p>"
-    )
 
-    # --- honesty ----------------------------------------------------------
-    A("<h2>What this does and does not claim</h2>")
     A(
-        "<ul>"
-        "<li>Absence of breach is <strong>empirically demonstrated under the "
-        "tested conditions</strong>, not formally proven.</li>"
-        "<li>The database <code>within_cap</code> CHECK constraint was "
-        "<strong>dropped for every run shown here</strong>, including the atomic "
-        "ones — so safety is attributable to the reserve strategy, not to the "
-        "database backstopping it.</li>"
-        "<li>The cap is an organizational <strong>policy input</strong>. This "
-        "system enforces whatever cap it is given and never derives one.</li>"
-        "<li>No differential-privacy mathematics is implemented. ε comes from "
-        "OpenDP, or is passed in and labelled <code>passed_in</code>.</li>"
-        "<li>Prior art — PrivateKube (OSDI '21), Sage — is cited up front. "
-        "PrivateKube also performs two-phase budget accounting; that is not "
-        "claimed as novel here.</li>"
-        "<li>This is the mid-term result. The cost of the guarantee — throughput "
-        "and latency across four strategies — is the primary contribution and is "
-        "not yet measured.</li>"
-        "</ul>"
-    )
-
-    src = []
-    for f, lab in [
-        ("exp1_naive_vs_n.csv", "Experiment 1 (naive)"),
-        ("exp1b_naive_txn_vs_n.csv", "Experiment 1b (naive_txn)"),
-        ("exp1c_race_window_vs_delay.csv", "Experiment 1c (race window)"),
-        ("exp2_atomic_vs_n.csv", "Experiment 2 (atomic)"),
-        ("exp1_naive_sequential_control.csv", "sequential control"),
-        ("exp_opendp_atomic.csv", "real-ε run (OpenDP)"),
-    ]:
-        if (RESULTS / f).exists():
-            src.append(f"{lab}: <code>results/{f}</code>")
-    A(
-        '<p class="foot">Every figure on this page is computed at generation time '
-        "from " + " · ".join(src) + ". Regenerate with "
-        "<code>make exp1 exp1b exp2 exp1-control &amp;&amp; python "
-        "experiments/report.py</code>."
-        "</p>"
+        '<p class="foot">Empirically demonstrated under the tested conditions, '
+        "not formally proven. The database CHECK constraint was dropped for every "
+        "run, so safety comes from the strategy alone. Full detail: "
+        "<code>README.md</code>. Regenerate with <code>make report</code>.</p>"
     )
     A("</div>")
 

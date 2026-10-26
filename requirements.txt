@@ -13,3 +13,6 @@ opendp==0.11.1
 
 # results
 pandas==2.2.3
+# figures that leave the repo as images (slides, dissertation);
+# report.py's own charts stay dependency-free inline SVG.
+matplotlib==3.11.2

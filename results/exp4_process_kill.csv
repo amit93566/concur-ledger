@@ -1,5 +1,5 @@
 mode,check,invariant,passed,detail
-process-kill,process really died and restarted,—,True,"3/3 kills, instance 75fa3915 -> d712369e, uptime now 0.092s"
+process-kill,process really died and restarted,—,True,"3/3 kills, instance dbc4712b -> 66c61cb7, uptime now 0.887s"
 process-kill,I1 holds after restart,I1,True,
 process-kill,I2 shows no drift after restart,I2,True,reserved=3.0 records=3.0
 process-kill,reservations survived the crash as holds,I3,True,{'reserved': 3}
