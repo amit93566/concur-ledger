@@ -20,7 +20,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from app.adapters import AdapterUnavailable, get_adapter, registry
-from app.adapters import opendp_adapter, passthrough  # noqa: F401  (registration)
+from app.adapters import (  # noqa: F401  (registration)
+    opendp_adapter,
+    passthrough,
+    synthetic,
+)
 from app.config import settings
 from app.db import close_pool, get_pool, open_pool
 from app.enforcement import (  # noqa: F401  (registration)
@@ -32,6 +36,7 @@ from app.enforcement import (  # noqa: F401  (registration)
 )
 from app.enforcement.base import (
     ALL_STRATEGIES,
+    FULL_CYCLE_ONLY,
     IMPLEMENTED_STRATEGIES,
     DatasetNotFound,
     ReserveRequest,
@@ -39,6 +44,7 @@ from app.enforcement.base import (
     StrategyNotImplemented,
     get_strategy,
 )
+from app.enforcement.locked_1phase import run_locked_1phase
 from app.enforcement.settle import (
     OverCommit,
     ReservationNotFound,
@@ -148,6 +154,7 @@ async def config():
         # Derived from the registry, not restated, so this cannot drift out of
         # step with what is actually registered.
         "implemented_strategies": list(IMPLEMENTED_STRATEGIES),
+        "full_cycle_only_strategies": list(FULL_CYCLE_ONLY),
         "phase_2_strategies": [
             s for s in ALL_STRATEGIES if s not in IMPLEMENTED_STRATEGIES
         ],
@@ -393,19 +400,20 @@ async def run_job(dataset_id: UUID, body: RunBody):
     Note what is NOT here: any `async with pool.connection()` wrapping the
     adapter call. Reserve opens and closes its own transaction; the operation
     runs with nothing held; commit opens a new one.
+
+    The one exception is `locked_1phase`, the rejected design kept as an
+    Experiment 3 comparator, which branches off before any of that and is
+    confined to app/enforcement/locked_1phase.py.
+
+    Every response carries `timing_ms`, measured here on the server, so the
+    harness can split its client-side latency into ledger time and overhead.
     """
+    t_start = time.perf_counter()
     try:
         adapter = get_adapter(body.adapter)
         cost = adapter.epsilon_for(body.spec)  # deterministic, known up front
     except AdapterUnavailable as exc:
         raise HTTPException(503, str(exc))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-
-    try:
-        strategy = get_strategy(body.strategy)
-    except StrategyNotImplemented as exc:
-        raise HTTPException(501, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
@@ -418,19 +426,36 @@ async def run_job(dataset_id: UUID, body: RunBody):
         epsilon_source=body.adapter,
         actor=body.actor,
     )
+
+    if body.strategy in FULL_CYCLE_ONLY:
+        return await _run_locked_1phase(req, adapter, body, cost, t_start)
+
+    try:
+        strategy = get_strategy(body.strategy)
+    except StrategyNotImplemented as exc:
+        raise HTTPException(501, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    timing: dict[str, float] = {}
+    t = time.perf_counter()
     try:
         reserved = await strategy(get_pool(), req)
     except DatasetNotFound:
         raise HTTPException(404, "dataset not found")
     except RetriesExhausted as exc:
         return _gave_up(exc)
+    timing["reserve"] = _ms_since(t)
 
     if reserved.status == "denied":
+        timing["total"] = _ms_since(t_start)
         return JSONResponse(
             {
                 "reservation_id": str(reserved.reservation_id),
                 "status": "denied",
                 "epsilon_cost": float(cost),
+                "retries": reserved.retries,
+                "timing_ms": timing,
             },
             status_code=429,
         )
@@ -447,12 +472,17 @@ async def run_job(dataset_id: UUID, body: RunBody):
             _admin_only()
             raise RuntimeError("injected fault: aborted between reserve and commit")
 
+        t = time.perf_counter()
         result = await adapter.run_operation(body.spec)
+        timing["operation"] = _ms_since(t)
+        t = time.perf_counter()
         settled = await do_commit(get_pool(), reserved.reservation_id, result.epsilon)
+        timing["commit"] = _ms_since(t)
     except Exception as exc:
         # The compensating action. The hold is returned; spent is untouched.
         await do_release(get_pool(), reserved.reservation_id)
         raise HTTPException(500, f"operation failed, reservation released: {exc}")
+    timing["total"] = _ms_since(t_start)
 
     return {
         "reservation_id": str(reserved.reservation_id),
@@ -463,7 +493,67 @@ async def run_job(dataset_id: UUID, body: RunBody):
         "result": result.result,
         "detail": result.detail,
         "dataset": dataset_out(settled.dataset),
+        "retries": reserved.retries,
+        "timing_ms": timing,
     }
+
+
+async def _run_locked_1phase(
+    req: ReserveRequest, adapter, body: RunBody, cost: Decimal, t_start: float
+):
+    # Fault points for this path come with the fault-hook module; until then a
+    # fault request here would silently test nothing, so refuse it.
+    if body.fault != "none":
+        raise HTTPException(400, "fault injection is not supported for locked_1phase")
+    try:
+        out = await run_locked_1phase(get_pool(), req, adapter, body.spec)
+    except DatasetNotFound:
+        raise HTTPException(404, "dataset not found")
+    except Exception as exc:
+        # The transaction has already rolled back: no record, no charge, no hold.
+        raise HTTPException(500, f"operation failed, transaction rolled back: {exc}")
+
+    timing = dict(out.timing_ms or {})
+    timing["total"] = _ms_since(t_start)
+    payload = {
+        "reservation_id": str(out.record_id),
+        "status": out.status,
+        "epsilon_cost": float(cost),
+        "retries": 0,
+        "replayed": out.replayed,
+        "timing_ms": timing,
+    }
+    if out.status == "denied":
+        return JSONResponse(payload, status_code=429)
+    if out.result is not None:
+        payload.update(
+            {
+                "epsilon_committed": float(out.epsilon_committed),
+                "epsilon_source": out.result.source,
+                "result": out.result.result,
+                "detail": out.result.detail,
+                "dataset": dataset_out(out.dataset),
+            }
+        )
+    return payload
+
+
+def _ms_since(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 3)
+
+
+@app.post("/datasets/{dataset_id}/noop")
+async def noop(dataset_id: UUID, body: RunBody):
+    """The Experiment 3 ceiling: everything /run costs except the ledger.
+
+    Same route shape, same JSON body parsed into the same model, same pool, one
+    round trip to Postgres -- and no lock, no write, no operation. Whatever
+    throughput this reaches at a given N is the most any strategy could reach
+    through this HTTP stack and this harness.
+    """
+    async with get_pool().connection() as conn:
+        await conn.execute("SELECT 1")
+    return {}
 
 
 @app.post("/debug/reserve-and-abort/{dataset_id}")
