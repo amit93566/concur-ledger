@@ -30,14 +30,28 @@ _pool: AsyncConnectionPool | None = None
 # This is NOT the behaviour at REPEATABLE READ or SERIALIZABLE. There the same
 # situation raises a serialization failure (SQLSTATE 40001) instead of
 # re-checking, so `atomic` would start erroring rather than denying. Those levels
-# are safe too, but only with a retry loop -- which is the Phase 2 `serializable`
-# strategy, and it will set its own level per transaction rather than change
-# this default.
+# are safe too, but only with a retry loop -- which is the `serializable`
+# strategy, and it sets its own level per transaction (SET TRANSACTION) rather
+# than change this default.
 #
 # The level was previously inherited from the server, whose default is also READ
 # COMMITTED: pinning it changes no behaviour and invalidates no earlier result.
 # It makes a dependency the results rest on explicit instead of accidental.
-LEDGER_ISOLATION = IsolationLevel.READ_COMMITTED
+#
+# LEDGER_ISOLATION overrides it for the isolation-matrix experiment only, which
+# shows what happens to `naive` and `atomic` at the other levels. The service
+# refuses to start if the session level does not match (app/main.py).
+ISOLATION_LEVELS = {
+    "read_committed": IsolationLevel.READ_COMMITTED,
+    "repeatable_read": IsolationLevel.REPEATABLE_READ,
+    "serializable": IsolationLevel.SERIALIZABLE,
+}
+if settings.ledger_isolation not in ISOLATION_LEVELS:
+    raise ValueError(
+        f"LEDGER_ISOLATION={settings.ledger_isolation!r}; "
+        f"expected one of {', '.join(ISOLATION_LEVELS)}"
+    )
+LEDGER_ISOLATION = ISOLATION_LEVELS[settings.ledger_isolation]
 
 
 async def _configure(conn) -> None:

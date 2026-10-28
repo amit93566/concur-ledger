@@ -1,9 +1,11 @@
 """Reserve-strategy interface and registry.
 
 The `strategy` request parameter selects the reserve implementation, so every
-strategy runs against identical load. Only `naive` and `atomic` exist in the
-mid-term scope; `for_update` and `serializable` are Phase 2 and fail loudly
-rather than silently falling back to something safe.
+strategy runs against identical load. A name in ALL_STRATEGIES that is not yet
+registered fails loudly rather than silently falling back to something safe.
+
+`locked_1phase` is deliberately NOT a reserve strategy: it holds its transaction
+across the operation, so it exists only as a full cycle (see locked_1phase.py).
 """
 
 from dataclasses import dataclass
@@ -14,7 +16,13 @@ from uuid import UUID
 from psycopg_pool import AsyncConnectionPool
 
 ALL_STRATEGIES = ("naive", "naive_txn", "atomic", "for_update", "serializable")
-IMPLEMENTED_STRATEGIES = ("naive", "naive_txn", "atomic")
+IMPLEMENTED_STRATEGIES = (
+    "naive",
+    "naive_txn",
+    "atomic",
+    "for_update",
+    "serializable",
+)
 
 
 class StrategyNotImplemented(Exception):
@@ -23,6 +31,15 @@ class StrategyNotImplemented(Exception):
 
 class DatasetNotFound(Exception):
     pass
+
+
+class RetriesExhausted(Exception):
+    """`serializable` gave up after its bounded retries. Nothing was decided:
+    this is a give-up, never a denial."""
+
+    def __init__(self, retries: int):
+        super().__init__(f"serialization failure persisted after {retries} retries")
+        self.retries = retries
 
 
 @dataclass
@@ -43,7 +60,7 @@ class ReserveOutcome:
     epsilon_reserved: Decimal
     strategy: str
     replayed: bool = False  # this idempotency key had already been used
-    retries: int = 0  # Phase 2 (serializable); always 0 here
+    retries: int = 0  # 40001 retries before this outcome; `serializable` only
     dataset: dict[str, Any] | None = None
     # Read-only telemetry: the (spent, reserved) this caller actually observed
     # when it made its decision. For `naive` these are the STALE values behind a

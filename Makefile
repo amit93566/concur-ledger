@@ -1,5 +1,5 @@
 .PHONY: help up down reset-db app app-stop app-logs psql health smoke \
-        exp1 exp1b exp1c exp2 exp4 exp4-kill opendp exp-opendp mid-demo watch clean \
+        exp1 exp1b exp1c exp2 exp2-safe exp4 exp4-kill opendp exp-opendp mid-demo watch clean \
         demo-breach demo-txn demo-safe demo-crash report run-report summary bundle figures docs
 
 BASE ?= http://localhost:8000
@@ -98,6 +98,17 @@ exp2:          ## Experiment 2 -- verify safety (atomic) under escalating conten
 	$(PY) experiments/harness_asyncio.py --strategy atomic \
 	  --cap 10 --seed-spent 6 --cost 2 --workers 2,3,5,10,20,50,100 --runs 25 \
 	  --out results/exp2_atomic_vs_n.csv
+
+# Experiment 2 for every safe strategy, so "safety holds across all safe
+# strategies at the heaviest tested concurrency" is a measured claim. Same seed,
+# load and run count as exp2; one CSV, one process per strategy (--append).
+exp2-safe:     ## Experiment 2 across atomic, for_update and serializable -> one CSV
+	@rm -f results/exp2_safe_strategies_vs_n.csv
+	@for s in atomic for_update serializable; do \
+	  $(PY) experiments/harness_asyncio.py --strategy $$s \
+	    --cap 10 --seed-spent 6 --cost 2 --workers 2,3,5,10,20,50,100 --runs 25 \
+	    --append --out results/exp2_safe_strategies_vs_n.csv || exit 1; \
+	done
 
 demo-crash:    ## DEMO -- Experiment 4 live: abort + one real kill, PASS/FAIL per check, no CSV
 	$(PY) experiments/crash_test.py --mode controlled-abort --runs 5

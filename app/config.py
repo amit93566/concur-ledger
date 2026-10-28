@@ -23,6 +23,7 @@ class Settings:
     pool_max_size: int
     naive_race_delay_ms: float
     allow_admin: bool
+    ledger_isolation: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -44,6 +45,12 @@ class Settings:
             naive_race_delay_ms=float(os.getenv("NAIVE_RACE_DELAY_MS", "0")),
             # Test-only endpoints (seeding, constraint toggle, fault injection).
             allow_admin=_flag("ALLOW_ADMIN_ENDPOINTS", True),
+            # The pool's isolation level. DEFAULT read_committed, which the
+            # `atomic` safety argument depends on (see app/db.py). Overridden
+            # ONLY by the isolation-matrix experiment; recorded in every row.
+            ledger_isolation=os.getenv("LEDGER_ISOLATION", "read_committed")
+            .strip()
+            .lower(),
         )
 
 

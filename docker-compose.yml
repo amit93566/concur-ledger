@@ -44,6 +44,8 @@ services:
       POOL_MIN_SIZE: "${POOL_MIN_SIZE:-10}"
       POOL_MAX_SIZE: "${POOL_MAX_SIZE:-120}"
       ALLOW_ADMIN_ENDPOINTS: "${ALLOW_ADMIN_ENDPOINTS:-true}"
+      # read_committed unless the isolation-matrix experiment overrides it.
+      LEDGER_ISOLATION: "${LEDGER_ISOLATION:-read_committed}"
     ports:
       - "8000:8000"
     depends_on:

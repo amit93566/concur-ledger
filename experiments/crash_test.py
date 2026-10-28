@@ -415,7 +415,9 @@ def parse_args():
     p.add_argument("--cap", type=float, default=100.0)
     p.add_argument("--cost", type=float, default=1.0)
     p.add_argument(
-        "--strategy", default="atomic", choices=["naive", "naive_txn", "atomic"]
+        "--strategy",
+        default="atomic",
+        choices=["naive", "naive_txn", "atomic", "for_update", "serializable"],
     )
     p.add_argument("--base-url", dest="base_url", default="http://localhost:8000")
     p.add_argument("--out", default=None, help="write per-check results CSV here")

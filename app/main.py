@@ -25,14 +25,17 @@ from app.config import settings
 from app.db import close_pool, get_pool, open_pool
 from app.enforcement import (  # noqa: F401  (registration)
     atomic,
+    for_update,
     naive,
     naive_single_txn,
+    serializable,
 )
 from app.enforcement.base import (
     ALL_STRATEGIES,
     IMPLEMENTED_STRATEGIES,
     DatasetNotFound,
     ReserveRequest,
+    RetriesExhausted,
     StrategyNotImplemented,
     get_strategy,
 )
@@ -70,6 +73,16 @@ async def lifespan(app: FastAPI):
     pool = await open_pool()
     async with pool.connection() as conn:
         await apply_schema(conn)
+        # Every result rests on the isolation level, so a mismatch between what
+        # was configured and what the session reports is a startup failure,
+        # not a log line.
+        cur = await conn.execute("SHOW transaction_isolation")
+        actual = (await cur.fetchone())["transaction_isolation"].replace(" ", "_")
+        if actual != settings.ledger_isolation:
+            raise RuntimeError(
+                f"isolation mismatch: configured {settings.ledger_isolation}, "
+                f"session reports {actual}"
+            )
 
     try:
         async with pool.connection() as conn:
@@ -261,6 +274,10 @@ async def db_constraint(body: ConstraintBody):
 
 @app.post("/datasets/{dataset_id}/reserve")
 async def reserve(dataset_id: UUID, body: ReserveRequestBody):
+    # Stamped before any database work, so the harness can show requests
+    # arrived together even for strategies whose INSERTs are spread out by
+    # queueing at the row lock.
+    received_at = time.time()
     req = ReserveRequest(
         dataset_id=dataset_id,
         job_id=body.job_id,
@@ -281,10 +298,13 @@ async def reserve(dataset_id: UUID, body: ReserveRequestBody):
         outcome = await strategy(get_pool(), req)
     except DatasetNotFound:
         raise HTTPException(404, "dataset not found")
+    except RetriesExhausted as exc:
+        return _gave_up(exc, received_at)
 
     payload = {
         "reservation_id": str(outcome.reservation_id),
         "status": outcome.status,
+        "received_at": received_at,
         "epsilon_reserved": float(outcome.epsilon_reserved),
         "strategy": outcome.strategy,
         "replayed": outcome.replayed,
@@ -332,6 +352,20 @@ async def get_reservation(reservation_id: UUID):
     if row is None:
         raise HTTPException(404, "reservation not found")
     return record_out(row)
+
+
+def _gave_up(exc: RetriesExhausted, received_at: float | None = None) -> JSONResponse:
+    # 503, not 429: a give-up decided nothing, so it must never be counted as a
+    # denial. The harness counts these separately.
+    return JSONResponse(
+        {
+            "status": "gave_up",
+            "retries": exc.retries,
+            "detail": str(exc),
+            "received_at": received_at,
+        },
+        status_code=503,
+    )
 
 
 def _settle_out(out) -> dict:
@@ -388,6 +422,8 @@ async def run_job(dataset_id: UUID, body: RunBody):
         reserved = await strategy(get_pool(), req)
     except DatasetNotFound:
         raise HTTPException(404, "dataset not found")
+    except RetriesExhausted as exc:
+        return _gave_up(exc)
 
     if reserved.status == "denied":
         return JSONResponse(
@@ -450,9 +486,18 @@ async def reserve_and_abort(dataset_id: UUID, body: ReserveRequestBody):
         actor=body.actor,
     )
     try:
-        outcome = await get_strategy(body.strategy)(get_pool(), req)
+        strategy = get_strategy(body.strategy)
+    except StrategyNotImplemented as exc:
+        raise HTTPException(501, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    try:
+        outcome = await strategy(get_pool(), req)
     except DatasetNotFound:
         raise HTTPException(404, "dataset not found")
+    except RetriesExhausted as exc:
+        return _gave_up(exc)
 
     return JSONResponse(
         {

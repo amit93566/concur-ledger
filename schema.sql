@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS spend_records (  -- one row per reservation attempt
     epsilon_reserved  NUMERIC(12,6) NOT NULL,   -- amount held at reserve time
     epsilon_committed NUMERIC(12,6),            -- actual cost; NULL until committed
     status            TEXT NOT NULL,            -- reserved|committed|released|denied
-    -- naive|naive_txn|atomic (implemented) | for_update|serializable (Phase 2).
+    -- naive|naive_txn|atomic|for_update|serializable, or locked_1phase (the
+    -- rejected one-transaction design, kept as an Experiment 3 comparator).
     -- naive and naive_txn both breach; they differ only in whether the
     -- read/check/write spans one transaction or two, which is the point.
     strategy          TEXT NOT NULL,

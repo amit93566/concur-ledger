@@ -9,9 +9,12 @@ The concurrency is the evidence, so two things are done deliberately:
     request pays for TCP setup while its peers are already in flight;
   * all workers park on one asyncio.Event and are released together.
 
-`reserved_at_spread_ms` is reported for every run precisely so this claim can be
-audited: if the timestamps are spread out rather than clustered, the requests
-were serialised and the run proves nothing.
+`arrival_spread_ms` is reported for every run precisely so this claim can be
+audited: it is the spread of the server's handler-entry timestamps, taken before
+any database work. If it is wide rather than clustered, the requests were
+serialised before they reached the ledger and the run proves nothing.
+`reserved_at_spread_ms` (the INSERT timestamps) is kept for comparison with the
+mid-term results; for lock-based strategies it also contains lock waits.
 
 Usage:
     python experiments/harness_asyncio.py --strategy naive  --workers 5  --runs 20
@@ -61,9 +64,22 @@ FIELDS = [
     "i2_ledger_agreement",
     "i4_exactly_once",
     "reserved_at_spread_ms",
+    # Server-side handler entry and client-side dispatch: the concurrency check
+    # that is valid for every strategy, lock-based ones included.
+    "arrival_spread_ms",
+    "sent_spread_ms",
+    # Peak number of requests open at the same instant. The direct measure of
+    # contention: a spread says when requests started, this says how many
+    # overlapped.
+    "max_in_flight",
     "wall_ms",
     "latency_p50_ms",
     "latency_max_ms",
+    # `serializable` only: 40001 retries summed over the run's callers, and
+    # callers that exhausted their retries. A give-up decided nothing, so it is
+    # neither a reservation nor a denial.
+    "retries_total",
+    "gave_up_count",
 ]
 
 
@@ -83,14 +99,32 @@ async def one_worker(client, ev, dataset_id, run, idx, cost, strategy, source):
             },
         )
     except Exception as exc:
-        return {"worker": idx, "outcome": "error", "detail": str(exc), "ms": 0.0}
+        return {
+            "worker": idx,
+            "outcome": "error",
+            "detail": str(exc),
+            "ms": 0.0,
+            "sent": t0,
+        }
     ms = (perf_counter() - t0) * 1000
+    if resp.status_code == 503 and resp.json().get("status") == "gave_up":
+        return {
+            "worker": idx,
+            "outcome": "gave_up",
+            "ms": ms,
+            "sent": t0,
+            "received_at": resp.json().get("received_at"),
+            "retries": resp.json()["retries"],
+        }
     if resp.status_code in (200, 429):
         body = resp.json()
         return {
             "worker": idx,
             "outcome": body["status"],
             "ms": ms,
+            "sent": t0,
+            "received_at": body.get("received_at"),
+            "retries": body.get("retries", 0),
             # What this caller observed when it decided. For `naive` this is the
             # stale read that explains the breach.
             "observed_spent": body.get("observed_spent"),
@@ -102,6 +136,24 @@ async def one_worker(client, ev, dataset_id, run, idx, cost, strategy, source):
         "detail": f"{resp.status_code} {resp.text}",
         "ms": ms,
     }
+
+
+def _max_in_flight(results):
+    """Peak count of requests open at once, from each client-side interval
+    [sent, sent + latency]. Errored requests have no latency and are skipped."""
+    events = []
+    for r in results:
+        if r["ms"] > 0:
+            events.append((r["sent"], 1))
+            events.append((r["sent"] + r["ms"] / 1000, -1))
+    # Ends sort before starts at the same instant, so touching intervals do not
+    # count as overlapping.
+    events.sort(key=lambda e: (e[0], e[1]))
+    peak = open_now = 0
+    for _, delta in events:
+        open_now += delta
+        peak = max(peak, open_now)
+    return peak
 
 
 def _read_positions(results, strategy):
@@ -203,6 +255,18 @@ async def run_once(client, args, dataset_id, run, cost, source):
         (stamps[-1] - stamps[0]).total_seconds() * 1000 if len(stamps) > 1 else 0.0
     )
 
+    # The concurrency check that holds for EVERY strategy. `reserved_at` is
+    # stamped by the INSERT, which the lock-based strategies reach only after
+    # queueing at the row lock, so its spread grows with lock waits and cannot
+    # tell "arrived together, then waited" from "never arrived together".
+    # `received_at` is stamped by the server when the handler starts, before any
+    # database work; `sent` is the client's own dispatch time.
+    arrivals = [r["received_at"] for r in results if r.get("received_at") is not None]
+    arrival_spread_ms = (max(arrivals) - min(arrivals)) * 1000 if len(arrivals) > 1 else 0.0
+    sends = [r["sent"] for r in results]
+    sent_spread_ms = (max(sends) - min(sends)) * 1000 if len(sends) > 1 else 0.0
+    max_in_flight = _max_in_flight(results)
+
     lat = [r["ms"] for r in results if r["ms"] > 0]
     headroom = args.cap - args.seed_spent
 
@@ -234,17 +298,27 @@ async def run_once(client, args, dataset_id, run, cost, source):
         "i2_ledger_agreement": inv["i2_ledger_agreement"],
         "i4_exactly_once": inv["i4_exactly_once"],
         "reserved_at_spread_ms": round(spread_ms, 3),
+        "arrival_spread_ms": round(arrival_spread_ms, 3),
+        "sent_spread_ms": round(sent_spread_ms, 3),
+        "max_in_flight": max_in_flight,
         "wall_ms": round(wall_ms, 3),
         "latency_p50_ms": round(statistics.median(lat), 3) if lat else 0.0,
         "latency_max_ms": round(max(lat), 3) if lat else 0.0,
+        "retries_total": sum(r.get("retries", 0) for r in results),
+        "gave_up_count": sum(1 for r in results if r["outcome"] == "gave_up"),
         "_errors": [r.get("detail") for r in results if r["outcome"] == "error"],
         "_results": results,
     }
 
 
 async def main_async(args):
+    # Sized for the LARGEST level in the sweep. Sizing it from the first level
+    # (as before) capped every later level at that many connections in flight:
+    # with --workers 2,...,100 the "N=100" runs had at most 22 concurrent
+    # requests and the rest queued inside the client.
+    max_workers = max(args.worker_levels)
     limits = httpx.Limits(
-        max_connections=args.workers + 20, max_keepalive_connections=args.workers + 20
+        max_connections=max_workers + 20, max_keepalive_connections=max_workers + 20
     )
     async with httpx.AsyncClient(
         base_url=args.base_url, limits=limits, timeout=60.0
@@ -313,12 +387,20 @@ async def main_async(args):
                     render_demo_run(row, args, cost)
                     continue
                 flag = "BREACH" if row["breach"] else "ok    "
+                retry_note = (
+                    f"retries={row['retries_total']:>3} "
+                    f"gave_up={row['gave_up_count']:>2}  "
+                    if args.strategy == "serializable"
+                    else ""
+                )
                 print(
                     f"run {run:>3}  {flag}  reserved={row['reserved_count']:>3} "
                     f"denied={row['denied_count']:>3} err={row['error_count']:>2}  "
+                    f"{retry_note}"
                     f"total={row['total']:>8.3f}/{args.cap}  "
                     f"overshoot={row['overshoot']:>7.3f}  "
-                    f"spread={row['reserved_at_spread_ms']:>7.2f}ms"
+                    f"arrival={row['arrival_spread_ms']:>7.2f}ms  "
+                    f"reserved_at={row['reserved_at_spread_ms']:>7.2f}ms"
                 )
                 if row["_errors"]:
                     print(f"        errors: {row['_errors'][:2]}")
@@ -364,13 +446,27 @@ def summarise(rows, args):
         f"  I2 held in             : {sum(r['i2_ledger_agreement'] for r in rows)}/{n} runs"
     )
     print(f"  I4 held in             : {sum(r['i4_exactly_once'] for r in rows)}/{n} runs")
+    arrivals = [r["arrival_spread_ms"] for r in rows]
+    in_flight = [r["max_in_flight"] for r in rows]
+    print(
+        f"  peak in flight         : min {min(in_flight)}/{args.workers}  "
+        f"median {statistics.median(in_flight)}/{args.workers}"
+    )
+    print(
+        f"  arrival spread (server): median {statistics.median(arrivals):.2f}ms  "
+        f"max {max(arrivals):.2f}ms"
+    )
     print(
         f"  reserved_at spread     : median {statistics.median(spreads):.2f}ms  "
-        f"max {max(spreads):.2f}ms"
+        f"max {max(spreads):.2f}ms  (includes lock waits)"
     )
-    if statistics.median(spreads) > 250:
+    # Judged on overlap, not on a spread. The single uvicorn worker admits
+    # requests one after another (~2 ms each), so the arrival spread grows with
+    # N even when every request is open at once; and reserved_at also contains
+    # lock waits. What makes a run valid evidence is that all N overlapped.
+    if not args.sequential and min(in_flight) < args.workers:
         print(
-            "  !! timestamps are NOT clustered -- requests may have been\n"
+            "  !! not every request was in flight at once -- some were\n"
             "     serialised. Treat this run as invalid evidence."
         )
     print("=" * 68)
@@ -456,6 +552,19 @@ def render_demo_run(row, args, cost):
                         first_read = (os_, or_)
                     elif (os_, or_) == first_read:
                         mark = "   ← same stale read"
+        elif args.strategy in ("for_update", "serializable"):
+            # observed = the PRE-write read, as for the naive family, but taken
+            # under the row lock (for_update) or from a snapshot SSI validated at
+            # commit (serializable) -- so the projection is a current decision,
+            # not a stale one.
+            if os_ is None:
+                line = "read(—)"
+            else:
+                projected = os_ + or_ + float(cost)
+                line = (
+                    f"read(spent {os_}, reserved {or_}) → "
+                    f"{projected} ≤ {cap} {'✓' if projected <= cap else '✗'}"
+                )
         else:
             # observed = the POST-update row from RETURNING. Re-projecting it
             # would be meaningless arithmetic (and would print things like
@@ -466,7 +575,9 @@ def render_demo_run(row, args, cost):
             else:
                 line = f"ledger now spent {os_} + reserved {or_} = {os_ + or_} ≤ {cap}"
 
-        action = "RESERVED" if r["outcome"] == "reserved" else "DENIED"
+        action = {"reserved": "RESERVED", "gave_up": "GAVE UP"}.get(
+            r["outcome"], "DENIED"
+        )
         print(f"  w{r['worker']:<3} {line} → {action}{mark}")
     if len(ordered) > args.demo_trace:
         print(f"  … {len(ordered) - args.demo_trace} more")
@@ -542,7 +653,9 @@ def write_csv(rows, path: Path, append=False):
 def parse_args():
     p = argparse.ArgumentParser(description="Experiments 1 & 2")
     p.add_argument(
-        "--strategy", default="naive", choices=["naive", "naive_txn", "atomic"]
+        "--strategy",
+        default="naive",
+        choices=["naive", "naive_txn", "atomic", "for_update", "serializable"],
     )
     p.add_argument("--cap", type=float, default=10.0)
     p.add_argument("--seed-spent", dest="seed_spent", type=float, default=6.0)
