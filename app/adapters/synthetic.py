@@ -12,7 +12,9 @@ two-phase strategies nothing is.
 
 Why the default epsilon is 0.001: the ledger columns are NUMERIC(12,6), so a
 cap tops out near 10^6. A 900 000 cap never binds at 0.001 a call, which is the
-unconstrained regime; the near-cap regime passes a larger epsilon explicitly.
+unconstrained regime. The near-cap regime passes epsilon 1 against cap 10 with
+`actual_epsilon` 0, so each operation holds budget while it runs and then gives
+it all back (see `actual_epsilon`).
 
 Every record it produces carries epsilon_source='synthetic'.
 """
@@ -40,6 +42,8 @@ class SyntheticAdapter:
         # Validated here too, because epsilon_for is what run_job calls up
         # front: a bad spec is then a 400, not a failed operation and a release.
         self.duration_s(spec)
+        if Decimal(str(spec.get("actual_epsilon", 0))) < 0:
+            raise ValueError("synthetic adapter requires spec.actual_epsilon >= 0")
         eps = Decimal(str(spec.get("epsilon", DEFAULT_EPSILON)))
         if eps <= 0:
             raise ValueError("synthetic adapter requires spec.epsilon > 0")
@@ -51,11 +55,25 @@ class SyntheticAdapter:
             raise ValueError("synthetic adapter requires spec.duration_ms >= 0")
         return ms / 1000
 
+    def actual_epsilon(self, spec: dict[str, Any]) -> Decimal:
+        """What the operation turns out to cost, committed after it runs.
+
+        Defaults to the reserved epsilon. The near-cap regime sets it to 0: the
+        hold is taken and returned, the budget never depletes, and the only
+        source of denials is headroom held by in-flight operations.
+        """
+        if "actual_epsilon" not in spec:
+            return self.epsilon_for(spec)
+        actual = Decimal(str(spec["actual_epsilon"]))
+        if actual < 0:
+            raise ValueError("synthetic adapter requires spec.actual_epsilon >= 0")
+        return actual.quantize(_QUANTUM, rounding=ROUND_CEILING)
+
     async def run_operation(self, spec: dict[str, Any]) -> OperationResult:
         duration = self.duration_s(spec)
         await asyncio.sleep(duration)
         return OperationResult(
-            epsilon=self.epsilon_for(spec),
+            epsilon=self.actual_epsilon(spec),
             source="synthetic",
             result=None,
             detail={"stub": True, "duration_ms": duration * 1000},

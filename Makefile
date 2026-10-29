@@ -1,5 +1,5 @@
 .PHONY: help up down reset-db app app-stop app-logs psql health smoke \
-        exp1 exp1b exp1c exp2 exp2-safe exp4 exp4-kill opendp exp-opendp mid-demo watch clean \
+        exp1 exp1b exp1c exp2 exp2-safe exp3 exp3-pilot exp3-noop exp3-nearcap exp4 exp4-kill opendp exp-opendp mid-demo watch clean \
         demo-breach demo-txn demo-safe demo-crash report run-report summary bundle figures docs
 
 BASE ?= http://localhost:8000
@@ -109,6 +109,26 @@ exp2-safe:     ## Experiment 2 across atomic, for_update and serializable -> one
 	    --cap 10 --seed-spent 6 --cost 2 --workers 2,3,5,10,20,50,100 --runs 25 \
 	    --append --out results/exp2_safe_strategies_vs_n.csv || exit 1; \
 	done
+
+# Experiment 3 -- the cost sweep. Closed loop over /run, synthetic operation,
+# one summary row per (strategy, N, duration, rep) cell. See exp3_sweep.py for
+# the method. The full grids are overnight runs: --resume picks up where a
+# crashed or interrupted sweep stopped, so re-running the target is safe.
+EXP3 = $(PY) experiments/exp3_sweep.py
+
+exp3-pilot:    ## Experiment 3 pilot -- every strategy, N in {1,8,64}, both durations, 1 rep (~25 min)
+	$(EXP3) --endpoint noop --ns 1,8,64 --reps 1 --resume --out results/exp3_pilot_noop.csv
+	$(EXP3) --ns 1,8,64 --reps 1 --resume --out results/exp3_pilot.csv
+
+exp3-noop:     ## Experiment 3 baseline -- the /noop ceiling at every N
+	$(EXP3) --endpoint noop --resume --out results/exp3_noop.csv
+
+exp3:          ## Experiment 3 -- full grid, unconstrained regime (overnight)
+	$(EXP3) --regime unconstrained --resume --raw results/exp3_raw \
+	  --out results/exp3_cost_sweep.csv
+
+exp3-nearcap:  ## Experiment 3 -- full grid, near-cap regime (overnight)
+	$(EXP3) --regime near_cap --resume --out results/exp3_nearcap.csv
 
 demo-crash:    ## DEMO -- Experiment 4 live: abort + one real kill, PASS/FAIL per check, no CSV
 	$(PY) experiments/crash_test.py --mode controlled-abort --runs 5
