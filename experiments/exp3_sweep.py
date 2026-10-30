@@ -56,6 +56,7 @@ Usage:
 import argparse
 import asyncio
 import csv
+import os
 import random
 import subprocess
 import sys
@@ -83,6 +84,12 @@ FIELDS = KEY + [
     "isolation_level",
     "db_constraint_present",
     "keep_awake",
+    "uvicorn_workers",
+    "pool_max_size",
+    # observed, not intended: os.sched_getaffinity and each container's cpuset
+    "cpus_harness",
+    "cpus_app",
+    "cpus_db",
     # throughput, from completions that end inside the measured window
     "completed",
     "completed_per_s",
@@ -182,6 +189,27 @@ def _quiesce(limit_s: float) -> float:
             return round(time.perf_counter() - start, 3)
         time.sleep(0.3)
     raise RuntimeError(f"server still busy {limit_s:.0f} s after the cell ended")
+
+
+def _cpuset(service: str) -> str:
+    cid = _compose("ps", "-q", service).strip()
+    out = subprocess.run(
+        ["docker", "inspect", "-f", "{{.HostConfig.CpusetCpus}}", cid],
+        capture_output=True, text=True, timeout=30,
+    ).stdout.strip()
+    return out or "all"
+
+
+def _ranges(cpus) -> str:
+    cpus = sorted(cpus)
+    out, start = [], None
+    for i, c in enumerate(cpus):
+        if start is None:
+            start = c
+        if i + 1 == len(cpus) or cpus[i + 1] != c + 1:
+            out.append(f"{start}-{c}" if c != start else f"{c}")
+            start = None
+    return ",".join(out)
 
 
 def _deadlocks() -> int:
@@ -330,6 +358,11 @@ async def run_cell(client, args, cell, cfg, constraint_present):
         isolation_level=cfg.get("isolation_level"),
         db_constraint_present=constraint_present,
         keep_awake=args.keep_awake,
+        uvicorn_workers=cfg.get("uvicorn_workers", 1),
+        cpus_harness=args.cpus["harness"],
+        cpus_app=args.cpus["app"],
+        cpus_db=args.cpus["db"],
+        pool_max_size=cfg["pool_max_size"],
         completed=len(completed),
         completed_per_s=round(len(completed) / window, 3),
         denied=len(denied),
@@ -421,11 +454,15 @@ def fmt(v, spec):
 
 
 def start_spinners(k: int) -> list[subprocess.Popen]:
-    # SCHED_IDLE: scheduled only when a core would otherwise sit idle.
+    # SCHED_IDLE: scheduled only when a core would otherwise sit idle. Given
+    # every CPU explicitly: under `taskset` (make exp3) they would otherwise
+    # inherit the harness's two cores and keep only those awake.
+    every_cpu = set(range(os.cpu_count() or 1))
     return [
         subprocess.Popen(
             ["chrt", "-i", "0", sys.executable, "-c", "while True: pass"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            preexec_fn=lambda: os.sched_setaffinity(0, every_cpu),
         )
         for _ in range(k)
     ]
@@ -457,20 +494,35 @@ async def main_async(args):
         base_url=args.base_url, limits=limits, timeout=args.timeout
     ) as client:
         cfg = (await client.get("/config")).json()
-        if cfg["pool_max_size"] < max(args.ns):
-            sys.exit(f"POOL_MAX_SIZE={cfg['pool_max_size']} < max N={max(args.ns)}")
+        workers = cfg.get("uvicorn_workers", 1)
+        # Keep-alive connections are not spread evenly over workers, so allow
+        # headroom: requests must queue in Postgres, never at a pool.
+        if cfg["pool_max_size"] * workers < max(args.ns) * 1.2 or (
+            workers == 1 and cfg["pool_max_size"] < max(args.ns)
+        ):
+            sys.exit(
+                f"pool too small: {workers} worker(s) x POOL_MAX_SIZE="
+                f"{cfg['pool_max_size']} for max N={max(args.ns)}"
+            )
         # Off, as in Experiments 1 and 2: the result must come from the strategy,
         # and `naive` must not be propped up (or failed) by the database CHECK.
         state = await client.post("/admin/db-constraint", json={"enabled": False})
         constraint_present = state.json()["within_cap_constraint_present"]
 
+        args.cpus = {
+            "harness": _ranges(os.sched_getaffinity(0)),
+            "app": await asyncio.to_thread(_cpuset, "app"),
+            "db": await asyncio.to_thread(_cpuset, "db"),
+        }
         per_cell = args.warmup + args.measure
         print(
             f"exp3: {len(cells)} cells to run ({len(skip)} already in {out}), "
             f"~{len(cells) * (per_cell + 3) / 60:.0f} min plus drains\n"
             f"endpoint={args.endpoint} regime={args.regime} "
             f"isolation={cfg.get('isolation_level')} CHECK={constraint_present} "
-            f"keep_awake={args.keep_awake}\n"
+            f"keep_awake={args.keep_awake} uvicorn_workers={workers} "
+            f"pool={cfg['pool_max_size']}/worker\n"
+            f"cpus: harness={args.cpus['harness']} app={args.cpus['app']} db={args.cpus['db']}\n"
         )
 
         new_file = not out.exists()

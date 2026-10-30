@@ -22,6 +22,7 @@ is ever called.
 from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
+from app import faults
 from app.enforcement.base import (
     RECORD_INSERT,
     DatasetNotFound,
@@ -80,6 +81,9 @@ async def reserve_for_update(
                 ),
             )
             rid = (await cur.fetchone())["id"]
+            # Experiment 4: die with the increment and the record written but
+            # not committed. Postgres must discard both.
+            faults.point("crash_in_reserve_txn")
         except errors.UniqueViolation:
             # Concurrent reserve with the same idempotency key: roll back the
             # increment with the insert and return the winner's outcome.

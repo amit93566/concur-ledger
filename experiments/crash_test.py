@@ -20,11 +20,35 @@ Two fault modes, and the write-up must state which was used:
 
 The controlled abort tests the same protocol property as the kill. It is the
 primary mode here for exactly that reason; the kill is run as corroboration.
+
+The modes above only reach the gap between two transactions. The extended
+modes (`make exp4-ext`) reach the places that gap does not, through the named
+points in app/faults.py:
+
+  --mode kill-in-reserve    os._exit after the reserve INSERT, before COMMIT.
+                            Expect no record for the key and no hold; the same
+                            key then reserves normally, once.
+  --mode kill-in-commit     os._exit between the two UPDATEs of a commit.
+                            Expect the record still `reserved`, nothing spent;
+                            release recovers it.
+  --mode kill-after-commit  os._exit after commit, before the client is told.
+                            Expect `committed`, charged once; a retried commit
+                            and a retried /run both charge nothing more.
+  --mode db-kill            SIGKILL the Postgres container under an N=20 /run
+                            load, start it again. Expect I1, I2, and every 200
+                            the clients received backed by a committed record.
+  --mode kill-under-load    One request crashes the service (crash_before_commit)
+                            while 19 others are in flight. Expect I1 and I2;
+                            any interrupted reservation left as a hold.
+
+Run with ONE uvicorn worker (the default). With several, os._exit kills one
+worker and uvicorn's master, not Docker, restarts it, which is a different test.
 """
 
 import argparse
 import asyncio
 import csv
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -140,11 +164,18 @@ async def controlled_abort(client, args, checks):
 # ---------------------------------------------------------------------------
 
 
-async def wait_for_service(client, timeout=90.0):
+async def wait_for_service(client, timeout=90.0, settle=0.0):
+    """Poll /health. `settle`: then stay up this long before returning.
+
+    Docker doubles its restart delay (up to a minute) each time a container
+    dies within 10 s of starting, and resets it only after 10 s of uptime. The
+    repeated-kill modes pass settle=11 so every kill meets a fresh backoff,
+    rather than waiting longer each rep."""
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         try:
             if (await client.get("/health", timeout=2.0)).status_code == 200:
+                await asyncio.sleep(settle)
                 return True
         except Exception:
             pass
@@ -205,6 +236,184 @@ async def process_kill(client, args, checks):
         "nothing was committed by a crashed job",
         after["epsilon_spent"] == 0,
         f"spent={after['epsilon_spent']}", invariant="I1")
+
+
+# ---------------------------------------------------------------------------
+# extended modes: crash points inside and after the transactions
+# ---------------------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+async def run_with_fault(client, dataset_id, key, fault, strategy, cost):
+    """POST /run; returns the response, or None if the service died on it."""
+    try:
+        return await client.post(
+            f"/datasets/{dataset_id}/run",
+            json={
+                "job_id": key,
+                "idempotency_key": key,
+                "strategy": strategy,
+                "adapter": "passthrough",
+                "spec": {"epsilon": cost},
+                "fault": fault,
+            },
+            timeout=10.0,
+        )
+    except Exception:
+        return None
+
+
+async def records_for(client, dataset_id, key):
+    rows = (await client.get(f"/datasets/{dataset_id}/records")).json()
+    return [r for r in rows if r["idempotency_key"] == key]
+
+
+async def kill_point(client, args, checks, fault):
+    print(f"\n--- {fault} x{args.runs} (strategy {args.strategy}) ---")
+    dataset_id = await fresh_dataset(client, args.cap, 0.0)
+    died = held = 0
+    expect_ok = True
+    for i in range(args.runs):
+        key = f"{fault}-{i}"
+        if await run_with_fault(client, dataset_id, key, fault, args.strategy, args.cost) is None:
+            died += 1
+        if not await wait_for_service(client, settle=11.0):
+            return checks.record("service restarted after kill", False)
+        recs = await records_for(client, dataset_id, key)
+        status = [r["status"] for r in recs]
+
+        if fault == "crash_in_reserve_txn":
+            # The uncommitted insert and increment are gone; the key is free.
+            ok = status == []
+            again = await run_with_fault(client, dataset_id, key, "none", args.strategy, args.cost)
+            ok = ok and again is not None and again.status_code == 200
+            ok = ok and [r["status"] for r in await records_for(client, dataset_id, key)] == ["committed"]
+        elif fault == "crash_in_commit_txn":
+            if args.strategy == "locked_1phase":
+                ok = status == []  # one transaction: nothing survives
+            else:
+                ok = status == ["reserved"]  # the reserve survived, commit did not
+                held += 1
+        else:  # crash_after_commit
+            ok = status == ["committed"]
+            rid = recs[0]["id"] if recs else None
+            if ok and args.strategy != "locked_1phase":
+                retry = (await client.post(f"/reservations/{rid}/commit", json={"actual_cost": args.cost})).json()
+                ok = retry.get("already_settled") is True
+            again = await run_with_fault(client, dataset_id, key, "none", args.strategy, args.cost)
+            ok = ok and again is not None and again.status_code == 200
+        if not ok:
+            print(f"    rep {i}: records for key = {status}")
+        expect_ok = expect_ok and ok
+
+    committed_expected = args.runs if fault != "crash_in_commit_txn" else 0
+    after = await inv(client, dataset_id)
+    checks.record(f"{fault}: the service really died every time", died == args.runs,
+                  f"{died}/{args.runs}", invariant="—")
+    checks.record(f"{fault}: per-key outcome as predicted on every rep", expect_ok,
+                  invariant={"crash_in_reserve_txn": "I1", "crash_in_commit_txn": "I2",
+                             "crash_after_commit": "I4"}[fault])
+    checks.record(f"{fault}: I1 holds", after["i1_cap_safety"], invariant="I1")
+    checks.record(f"{fault}: I2 no drift", after["i2_ledger_agreement"],
+                  f"reserved={after['epsilon_reserved']} records={after['records_reserved']}", invariant="I2")
+    checks.record(
+        f"{fault}: charged exactly once per committed key",
+        abs(after["epsilon_spent"] - committed_expected * args.cost) < 1e-9
+        and abs(after["epsilon_reserved"] - held * args.cost) < 1e-9,
+        f"spent={after['epsilon_spent']} (expect {committed_expected * args.cost}), "
+        f"reserved={after['epsilon_reserved']} (expect {held * args.cost})", invariant="I4")
+    if held:
+        for r in (await client.get(f"/datasets/{dataset_id}/records")).json():
+            if r["status"] == "reserved":
+                await client.post(f"/reservations/{r['id']}/release")
+        rec = await inv(client, dataset_id)
+        checks.record(f"{fault}: surviving holds recoverable by release",
+                      rec["epsilon_reserved"] == 0 and rec["i2_ledger_agreement"], invariant="I2")
+
+
+def _compose(*a):
+    return subprocess.run(["docker", "compose", *a], cwd=ROOT, capture_output=True,
+                          text=True, timeout=120)
+
+
+async def load(client, dataset_id, n, tag, strategy, cost, fault_idx=None):
+    """n concurrent /run calls; returns [(key, status_code or None)]."""
+    async def one(i):
+        key = f"{tag}-{i}"
+        fault = "crash_before_commit" if i == fault_idx else "none"
+        r = await run_with_fault(client, dataset_id, key, fault, strategy, cost)
+        return key, (r.status_code if r is not None else None)
+    return await asyncio.gather(*(one(i) for i in range(n)))
+
+
+async def sustained(client, dataset_id, n, tag, strategy, cost, stop):
+    """n workers looping /run until `stop`; returns [(key, status_code or None)]."""
+    out = []
+
+    async def worker(w):
+        i = 0
+        while not stop.is_set():
+            key = f"{tag}-w{w}-{i}"
+            i += 1
+            r = await run_with_fault(client, dataset_id, key, "none", strategy, cost)
+            out.append((key, r.status_code if r is not None else None))
+            if r is None or r.status_code >= 500:
+                await asyncio.sleep(0.05)
+    await asyncio.gather(*(worker(w) for w in range(n)))
+    return out
+
+
+async def under_load(client, args, checks, kind):
+    n = 20
+    print(f"\n--- {kind} x{args.runs} (N={n} /run load, strategy {args.strategy}) ---")
+    # Interrupted reservations stay as holds (by design), so give the load a cap
+    # that never binds: a denial here would test nothing.
+    dataset_id = await fresh_dataset(client, 100000.0, 0.0)
+    acked_missing = 0
+    total_acked = 0
+    for rep in range(args.runs):
+        if kind == "db-kill":
+            # Sustained closed-loop load, so the kill lands with requests in
+            # every stage: queued, mid-reserve, in the operation, mid-commit.
+            stop = asyncio.Event()
+            task = asyncio.create_task(
+                sustained(client, dataset_id, n, f"dbk{rep}", args.strategy, args.cost, stop))
+            await asyncio.sleep(1.0)
+            await asyncio.to_thread(_compose, "kill", "db")
+            await asyncio.sleep(1.0)
+            stop.set()
+            results = await task
+            await asyncio.to_thread(_compose, "start", "db")
+        else:
+            results = await load(client, dataset_id, n, f"kul{rep}", args.strategy, args.cost, fault_idx=n // 2)
+        if not await wait_for_service(client, timeout=120, settle=11.0):
+            return checks.record(f"{kind}: service healthy again", False)
+        recs = {r["idempotency_key"]: r["status"] for r in
+                (await client.get(f"/datasets/{dataset_id}/records", params={"limit": 5000})).json()}
+        for key, code in results:
+            if code == 200:
+                total_acked += 1
+                if recs.get(key) != "committed":
+                    acked_missing += 1
+        codes = {}
+        for _, c in results:
+            codes[str(c)] = codes.get(str(c), 0) + 1
+        print(f"    rep {rep}: response codes {dict(sorted(codes.items()))}")
+    after = await inv(client, dataset_id)
+    checks.record(f"{kind}: I1 holds", after["i1_cap_safety"], invariant="I1")
+    checks.record(f"{kind}: I2 no drift", after["i2_ledger_agreement"],
+                  f"spent={after['epsilon_spent']} reserved={after['epsilon_reserved']} "
+                  f"counts={after['status_counts']}", invariant="I2")
+    committed = after["status_counts"].get("committed", 0)
+    checks.record(f"{kind}: every acknowledged commit is durable", acked_missing == 0,
+                  f"{total_acked} acknowledged, {acked_missing} missing; "
+                  f"{committed - total_acked} committed but never acknowledged "
+                  f"(the client saw an error after the commit landed -- the case "
+                  f"idempotent retry by key exists for)", invariant="I2")
+    checks.record(f"{kind}: no record left half-settled",
+                  set(after["status_counts"]) <= {"reserved", "committed", "released", "denied"},
+                  str(after["status_counts"]), invariant="I3")
 
 
 # ---------------------------------------------------------------------------
@@ -385,13 +594,22 @@ async def main_async(args):
         # what keeps the ledger consistent through a crash.
         await client.post("/admin/db-constraint", json={"enabled": False})
 
+        cfg = (await client.get("/config")).json()
+        if args.mode in EXTENDED and cfg.get("uvicorn_workers", 1) != 1:
+            sys.exit("extended crash modes need UVICORN_WORKERS=1 (see docstring)")
+
         checks = Checks(mode=args.mode)
         if args.mode in ("controlled-abort", "all"):
             await controlled_abort(client, args, checks)
         if args.mode in ("process-kill", "all"):
             await process_kill(client, args, checks)
-        await idempotency_checks(client, args, checks)
-        await partial_commit_checks(client, args, checks)
+        if args.mode in KILL_POINTS:
+            await kill_point(client, args, checks, KILL_POINTS[args.mode])
+        if args.mode in ("db-kill", "kill-under-load"):
+            await under_load(client, args, checks, args.mode)
+        if args.mode not in EXTENDED:
+            await idempotency_checks(client, args, checks)
+            await partial_commit_checks(client, args, checks)
 
         print(f"\nfault-injection method used: {args.mode}")
         if args.out:
@@ -404,12 +622,20 @@ async def main_async(args):
         return 0 if ok else 1
 
 
+KILL_POINTS = {
+    "kill-in-reserve": "crash_in_reserve_txn",
+    "kill-in-commit": "crash_in_commit_txn",
+    "kill-after-commit": "crash_after_commit",
+}
+EXTENDED = (*KILL_POINTS, "db-kill", "kill-under-load")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="Experiment 4 -- crash / fault injection")
     p.add_argument(
         "--mode",
         default="controlled-abort",
-        choices=["controlled-abort", "process-kill", "all"],
+        choices=["controlled-abort", "process-kill", "all", *EXTENDED],
     )
     p.add_argument("--runs", type=int, default=30)
     p.add_argument("--cap", type=float, default=100.0)
@@ -417,7 +643,8 @@ def parse_args():
     p.add_argument(
         "--strategy",
         default="atomic",
-        choices=["naive", "naive_txn", "atomic", "for_update", "serializable"],
+        choices=["naive", "naive_txn", "atomic", "for_update", "serializable",
+                 "locked_1phase"],
     )
     p.add_argument("--base-url", dest="base_url", default="http://localhost:8000")
     p.add_argument("--out", default=None, help="write per-check results CSV here")

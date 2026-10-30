@@ -219,6 +219,8 @@ def bar_chart(labels, vals, vmax, yfmt, ylabel, var):
 # --------------------------------------------------------------------------
 
 CSS = """
+table.t{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+table.t th,table.t td{text-align:left;padding:6px 10px;border-bottom:1px solid rgba(128,128,128,.25)}
 :root{color-scheme:light;
  --bg:#fcfcfb; --card:#ffffff; --line:#e4e3de; --ink:#0b0b0b; --ink2:#52514e;
  --ink3:#76756f; --naive:__NAIVE_L__; --safe:__SAFE_L__; --codebg:#f6f6f3;}
@@ -329,6 +331,145 @@ def exp(num, title, problem, solution, solution_label, body):
         f'<p class="q"><span class="lbl">{esc(solution_label)}</span>{solution}</p>'
         f"{body}"
     )
+
+
+def table(headers, rows):
+    head = "".join(f"<th>{esc(h)}</th>" for h in headers)
+    body = "".join(
+        "<tr>" + "".join(f"<td>{esc(c)}</td>" for c in row) + "</tr>" for row in rows
+    )
+    return f'<div class="card"><table class="t"><tr>{head}</tr>{body}</table></div>'
+
+
+def _median_cells(rows, key):
+    g = {}
+    for r in rows:
+        if r.get(key) != "":
+            g.setdefault((r["strategy"], r["duration_ms"], r["n"]), []).append(float(r[key]))
+    return {k: sorted(v)[len(v) // 2] for k, v in g.items()}
+
+
+def exp3_section():
+    rows = read("exp3_cost_sweep.csv")
+    pilot = not rows
+    rows = rows or read("exp3_pilot.csv")
+    if not rows:
+        return ""
+    noop_rows = read("exp3_noop.csv") or read("exp3_pilot_noop.csv")
+    noop = {k[2]: v for k, v in _median_cells(noop_rows, "completed_per_s").items()}
+    done = _median_cells(rows, "completed_per_s")
+    p99 = _median_cells(rows, "lat_p99_ms")
+    timeouts = {}
+    for r in rows:
+        k = (r["strategy"], r["duration_ms"], r["n"])
+        timeouts[k] = timeouts.get(k, 0) + r["timeouts"]
+    strategies = ["atomic", "for_update", "serializable", "locked_1phase", "naive"]
+    longest, shortest = max(r["duration_ms"] for r in rows), min(r["duration_ms"] for r in rows)
+    top = max(r["n"] for r in rows)
+    hold = [all(r[k] for k in ("i1_cap_safety", "i2_ledger_agreement")) for r in rows
+            if r["strategy"] != "naive"]
+    deadlocks = sum(r["deadlocks"] for r in rows)
+    body = []
+    for d in (shortest, longest):
+        ns = sorted({k[2] for k in done if k[1] == d})
+        trows = []
+        for s in strategies:
+            if not any(k[0] == s for k in done):
+                continue
+            cells = []
+            for n in ns:
+                v = done.get((s, d, n))
+                mark = "*" if timeouts.get((s, d, n)) else ""
+                cells.append("-" if v is None else f"{v:.1f}{mark}")
+            trows.append([s + (" (unsafe)" if s == "naive" else ""), *cells])
+        trows.append(["no-op ceiling", *[f"{noop[n]:.0f}" if n in noop else "-" for n in ns]])
+        body.append(f"<h3>Completed cycles/s, {d} ms operation</h3>")
+        body.append(table(["strategy", *[f"N={n}" for n in ns]], trows))
+    lat = [[s, f"{p99.get((s, longest, top), 0):,.0f}"
+            + ("*" if timeouts.get((s, longest, top)) else "")]
+           for s in strategies if (s, longest, top) in p99]
+    body.append(f"<h3>p99 latency at N={top}, {longest} ms operation (ms)</h3>")
+    body.append(table(["strategy", "p99 ms"], lat))
+    body.append(
+        '<p class="foot">* client timeouts in that cell: latency is censored, a lower '
+        "bound. At short operations every strategy, naive included, is limited by the "
+        "single dataset row: each reserve and commit updates it and holds its lock "
+        "until the commit is on disk. Four uvicorn workers did not raise this.</p>"
+    )
+    return exp(
+        "3" + (" (pilot, 1 rep)" if pilot else ""),
+        "The cost of the guarantee",
+        "Two-phase reserve/commit is more code than holding one lock. What does safety "
+        "cost, and what does the two-phase design buy?",
+        f"Every safe strategy held I1 and I2 in {sum(hold)}/{len(hold)} cells, with "
+        f"{deadlocks} deadlocks. Holding the lock across a {longest} ms operation "
+        "pins throughput to about one cycle per operation time whatever N is, while "
+        "the two-phase strategies scale with N.",
+        "Result",
+        "".join(body),
+    )
+
+
+def evidence_sections():
+    out = []
+    eps = read("eps_table.csv")
+    if eps:
+        out.append(exp(
+            "ε", "Where ε comes from",
+            "The ledger enforces a sum. Who chooses the numbers it adds up?",
+            "OpenDP prices a spec, the ledger rounds that up, and the cap is a policy "
+            "input. Noise is measured from real releases, not only derived.",
+            "Answer",
+            table(
+                ["query", "sensitivity", "OpenDP ε", "ledger ε", "noise std",
+                 "measured", f"fit in cap {eps[0]['cap']}"],
+                [[f"{r['kind']} b={r['scale']}"
+                  + (f" ×{r['contributions']}" if r["contributions"] != 1 else ""),
+                  r["sensitivity"], r["raw_epsilon"], r["ledger_epsilon"],
+                  r["noise_std"], r["empirical_std"], r["uses_of_cap"]] for r in eps],
+            ),
+        ))
+    iso = read("exp_isolation_matrix.csv")
+    if iso:
+        g = {}
+        for r in iso:
+            g.setdefault((r["isolation_level"], r["strategy"]), []).append(r)
+        out.append(exp(
+            "L", "Isolation levels",
+            "Does a stricter isolation level make the naive strategy safe?",
+            "No. Naive reads and writes in separate transactions, and isolation governs "
+            "only what happens inside one. Atomic is safe at every level, but only READ "
+            "COMMITTED turns contention into clean denials: the stricter levels raise "
+            "40001, which surfaces as an error a client must retry.",
+            "Answer",
+            table(
+                ["level", "strategy", "runs", "breached", "granted", "denied", "errors"],
+                [[lvl, s, len(rs), sum(1 for r in rs if r["breach"]),
+                  sum(r["reserved_count"] for r in rs), sum(r["denied_count"] for r in rs),
+                  sum(r["error_count"] for r in rs)] for (lvl, s), rs in g.items()],
+            ),
+        ))
+    faults = {}
+    for path in sorted(RESULTS.glob("exp4_*.csv")):
+        rows = read(path.name)
+        if rows:
+            faults[path.stem.removeprefix("exp4_")] = rows
+    if faults:
+        out.append(exp(
+            "F", "What the crash results do and do not show",
+            "Which failures were actually exercised?",
+            "Crashes inside each transaction, after commit, of the database under load, "
+            "and of the service under load. Not tested: disk loss, fsync lies, network "
+            "partitions, and clock faults. A commit can land while its client sees an "
+            "error, which is why retries carry an idempotency key.",
+            "Coverage",
+            table(
+                ["mode", "checks passed"],
+                [[m, f"{sum(1 for r in rs if r['passed'])}/{len(rs)}"]
+                 for m, rs in faults.items()],
+            ),
+        ))
+    return "".join(out)
 
 
 def build():
@@ -478,6 +619,9 @@ def build():
                 f'<div class="card">{pass_bars(groups)}</div>',
             )
         )
+
+    A(exp3_section())
+    A(evidence_sections())
 
     A(
         '<p class="foot">Empirically demonstrated under the tested conditions, '

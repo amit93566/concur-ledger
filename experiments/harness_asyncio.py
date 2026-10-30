@@ -130,11 +130,15 @@ async def one_worker(client, ev, dataset_id, run, idx, cost, strategy, source):
             "observed_spent": body.get("observed_spent"),
             "observed_reserved": body.get("observed_reserved"),
         }
+    # 500s are data in the isolation matrix (40001 surfaces as one), so an
+    # error keeps its send time and server stamp like any other outcome.
     return {
         "worker": idx,
         "outcome": "error",
-        "detail": f"{resp.status_code} {resp.text}",
+        "detail": f"{resp.status_code} {resp.text[:300]}",
         "ms": ms,
+        "sent": t0,
+        "received_at": None,
     }
 
 

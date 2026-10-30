@@ -326,32 +326,31 @@ A(
 )
 
 # --- EXP 3 -----------------------------------------------------------------
-A(
-    block(
-        "3",
-        "The cost of the guarantee — the cost sweep",
-        "What does safety cost in throughput and latency, across strategies and "
-        "operation durations?",
-        "# Phase 2 — not yet run",
-        "NOT YET MEASURED",
-        "off",
-        '<div class="tw">'
-        + table(
-            ["planned variable", "levels"],
-            [
-                ["strategies", "naive · naive_txn · atomic · for_update · serializable"],
-                ["concurrency", "1, 2, 4, 8, 16, 32, 64, 100"],
-                ["duration regimes", "short · long (synthetic adapter)"],
-                ["metrics", "throughput · latency p50/p95/p99 · denial rate · 40001 retries"],
-                ["validity controls", "no-op baseline · stated saturation point"],
-            ],
+sweep = load("exp3_cost_sweep.csv")
+if sweep:
+    best = {}
+    for r in sweep:
+        k = (r["strategy"], r["duration_ms"])
+        best[k] = max(best.get(k, 0.0), float(r["completed_per_s"]))
+    A(
+        block(
+            "3",
+            "The cost of the guarantee -- the cost sweep",
+            "What does safety cost in throughput and latency, across strategies and "
+            "operation durations?",
+            f"# {len(sweep)} cells, closed loop over /run",
+            "MEASURED",
+            "ok",
+            '<div class="tw">'
+            + table(
+                ["strategy", "operation ms", "peak cycles/s"],
+                [[s, d, f"{v:.1f}"] for (s, d), v in sorted(best.items())],
+            )
+            + "</div>",
+            "Figures and the full table are in results/report.html. All contention is "
+            "on one row by design: that ceiling is structural.",
         )
-        + "</div>",
-        "This is the primary contribution and it is deliberately absent from the "
-        "mid-term scope. All contention is on a single row by design; that ceiling "
-        "is structural, and the sweep measures its price rather than discovering it.",
     )
-)
 
 # --- EXP 4 -----------------------------------------------------------------
 if crash:

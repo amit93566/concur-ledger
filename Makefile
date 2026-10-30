@@ -1,5 +1,6 @@
 .PHONY: help up down reset-db app app-stop app-logs psql health smoke \
-        exp1 exp1b exp1c exp2 exp2-safe exp3 exp3-pilot exp3-noop exp3-nearcap exp4 exp4-kill opendp exp-opendp mid-demo watch clean \
+        exp1 exp1b exp1c exp2 exp2-safe exp3 exp3-pilot exp3-noop exp3-nearcap exp4 exp4-ext exp1c-n50 pin unpin \
+        eps-table exp-eps-scale exp-eps-round exp-isolation exp-lock-waits demo-locks exp4-kill opendp exp-opendp mid-demo watch clean \
         demo-breach demo-txn demo-safe demo-crash report run-report summary bundle figures docs
 
 BASE ?= http://localhost:8000
@@ -79,15 +80,19 @@ exp1-control:  ## control -- the SAME naive code run sequentially must not breac
 # /config, so each point is a container recreate plus its own harness process,
 # appending to one CSV. Restores the delay to 0 at the end -- leaving it set
 # would silently contaminate every later experiment.
+EXP1C_N      ?= 20
+EXP1C_DELAYS ?= 0 5 25 100
+EXP1C_OUT    ?= results/exp1c_race_window_vs_delay.csv
+
 exp1c:         ## Experiment 1c -- widen the race window at fixed N (plateau mechanism)
-	@rm -f results/exp1c_race_window_vs_delay.csv
-	@for d in 0 5 25 100; do \
+	@rm -f $(EXP1C_OUT)
+	@for d in $(EXP1C_DELAYS); do \
 	  echo "\n=== NAIVE_RACE_DELAY_MS=$$d ==="; \
 	  NAIVE_RACE_DELAY_MS=$$d docker compose up -d app >/dev/null 2>&1 || exit 1; \
 	  for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done; \
 	  $(PY) experiments/harness_asyncio.py --strategy naive \
-	    --cap 10 --seed-spent 6 --cost 2 --workers 20 --runs 10 \
-	    --append --out results/exp1c_race_window_vs_delay.csv || exit 1; \
+	    --cap 10 --seed-spent 6 --cost 2 --workers $(EXP1C_N) --runs 10 \
+	    --append --out $(EXP1C_OUT) || exit 1; \
 	done
 	@echo "\nrestoring NAIVE_RACE_DELAY_MS=0"
 	@NAIVE_RACE_DELAY_MS=0 docker compose up -d app >/dev/null 2>&1
@@ -114,7 +119,19 @@ exp2-safe:     ## Experiment 2 across atomic, for_update and serializable -> one
 # one summary row per (strategy, N, duration, rep) cell. See exp3_sweep.py for
 # the method. The full grids are overnight runs: --resume picks up where a
 # crashed or interrupted sweep stopped, so re-running the target is safe.
-EXP3 = $(PY) experiments/exp3_sweep.py
+EXP3_HARNESS_CPUS ?= 10,11
+EXP3 = taskset -c $(EXP3_HARNESS_CPUS) $(PY) experiments/exp3_sweep.py
+PINNED = docker compose -f docker-compose.yml -f docker-compose.pinned.yml
+
+pin:           ## pin db and app to their cores (docker-compose.pinned.yml) for Exp 3
+	$(PINNED) up -d
+	@for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done
+	@docker inspect -f '{{.Name}} cpuset={{.HostConfig.CpusetCpus}}' $$(docker compose ps -q)
+
+unpin:         ## back to the unpinned containers every other experiment uses
+	docker compose up -d
+	@for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done
+	@docker inspect -f '{{.Name}} cpuset={{.HostConfig.CpusetCpus}}' $$(docker compose ps -q)
 
 exp3-pilot:    ## Experiment 3 pilot -- every strategy, N in {1,8,64}, both durations, 1 rep (~25 min)
 	$(EXP3) --endpoint noop --ns 1,8,64 --reps 1 --resume --out results/exp3_pilot_noop.csv
@@ -129,6 +146,73 @@ exp3:          ## Experiment 3 -- full grid, unconstrained regime (overnight)
 
 exp3-nearcap:  ## Experiment 3 -- full grid, near-cap regime (overnight)
 	$(EXP3) --regime near_cap --resume --out results/exp3_nearcap.csv
+
+# --- Phase 4: the three points the mid-sem panel raised -------------------
+
+eps-table:     ## epsilon selection -- OpenDP cost and accuracy per spec -> results/eps_table.csv
+	$(PY) experiments/eps_table.py
+
+# Same contention pattern as Exp 1/2 at a tenth of the scale: cap 1, spent 0.6,
+# a count at Laplace scale 5 costs 0.2 -> exactly 2 fit. The cap's units do
+# not change the race or the fix.
+exp-eps-scale: ## epsilon selection -- naive vs atomic at cap 1, OpenDP eps 0.2
+	@rm -f results/exp_eps_scale.csv
+	@for s in naive atomic; do \
+	  $(PY) experiments/harness_asyncio.py --strategy $$s --adapter opendp \
+	    --spec-kind count --spec-scale 5 --cap 1 --seed-spent 0.6 \
+	    --workers 2,5,10,50 --runs 15 --append --out results/exp_eps_scale.csv || exit 1; \
+	done
+
+# OpenDP prices this sum at 2.0000000186; the ledger rounds UP to 2.000001, so
+# two no longer fit in the 4 of headroom. Expect exactly 1 grant per run.
+exp-eps-round: ## epsilon selection -- conservative rounding costs a grant (expect 1, not 2)
+	$(PY) experiments/harness_asyncio.py --strategy atomic --adapter opendp \
+	  --spec-kind sum --spec-scale 50 --cap 10 --seed-spent 6 \
+	  --workers 5,20 --runs 10 --out results/exp_eps_round.csv
+
+# naive and atomic at every isolation level. The service is recreated per level
+# (LEDGER_ISOLATION is read at startup and asserted); the trap puts it back to
+# read_committed even if a run fails, because leaving it changed would silently
+# alter every later experiment.
+exp-isolation: ## PostgreSQL locking -- naive/atomic at RC, RR, SERIALIZABLE -> one CSV
+	@rm -f results/exp_isolation_matrix.csv
+	@trap 'echo "\nrestoring LEDGER_ISOLATION=read_committed"; \
+	       LEDGER_ISOLATION=read_committed docker compose up -d app >/dev/null 2>&1; \
+	       for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done; \
+	       curl -s $(BASE)/config | grep -o "\"isolation_level\":\"[^\"]*\""' EXIT; \
+	for lvl in read_committed repeatable_read serializable; do \
+	  echo "\n=== LEDGER_ISOLATION=$$lvl ==="; \
+	  LEDGER_ISOLATION=$$lvl docker compose up -d app >/dev/null 2>&1 || exit 1; \
+	  for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done; \
+	  curl -s $(BASE)/config | grep -o '"isolation_level":"[^"]*"'; \
+	  for s in naive atomic; do \
+	    $(PY) experiments/harness_asyncio.py --strategy $$s \
+	      --cap 10 --seed-spent 6 --cost 2 --workers 10 --runs 15 \
+	      --append --out results/exp_isolation_matrix.csv || exit 1; \
+	  done; \
+	done
+
+exp-lock-waits: ## PostgreSQL locking -- sample backends waiting on the row lock during bursts
+	$(PY) experiments/lock_sampler.py --strategies atomic,for_update --workers 50 --runs 5
+
+demo-locks:    ## DEMO -- two sessions: one blocks on the other's row lock, then re-checks
+	$(PY) experiments/demo_locks.py
+
+# Crash points INSIDE and AFTER the transactions (app/faults.py). Needs the
+# default single uvicorn worker. One CSV per mode, same check-row format as exp4.
+exp4-ext:      ## Experiment 4 extended -- 5 more fault modes, 10 reps each -> results/exp4_*.csv
+	@for m in kill-in-reserve kill-in-commit kill-after-commit db-kill kill-under-load; do \
+	  $(PY) experiments/crash_test.py --mode $$m --runs 10 \
+	    --out results/exp4_$$(echo $$m | tr - _).csv || exit 1; \
+	done
+	$(PY) experiments/crash_test.py --mode kill-in-commit --strategy locked_1phase \
+	  --runs 10 --out results/exp4_kill_in_commit_locked.csv
+	$(PY) experiments/crash_test.py --mode kill-after-commit --strategy locked_1phase \
+	  --runs 10 --out results/exp4_kill_after_commit_locked.csv
+
+# The same intervention at N=50 with finer delays, as the locking section asks.
+exp1c-n50:     ## Experiment 1c at N=50, delays 0/1/5/20 ms -> results/exp1c_n50.csv
+	@$(MAKE) exp1c EXP1C_N=50 EXP1C_DELAYS="0 1 5 20" EXP1C_OUT=results/exp1c_n50.csv
 
 demo-crash:    ## DEMO -- Experiment 4 live: abort + one real kill, PASS/FAIL per check, no CSV
 	$(PY) experiments/crash_test.py --mode controlled-abort --runs 5

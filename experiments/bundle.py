@@ -228,11 +228,10 @@ This repository demonstrates three things empirically:
 3. A crash mid-protocol **cannot corrupt the ledger** — budget survives as a hold,
    never as a loss and never as a double-spend.
 
-**Scope.** This is the mid-term milestone (Phases 0–1; Experiments 1, 1b, 2 and
-4). Deliberately absent and scheduled for Phase 2–4: the `for_update` and
-`serializable` strategies, the synthetic duration adapter, **Experiment 3 — the
-cost sweep, which is the primary contribution** — Opacus, RBAC, a hash-chained
-audit log, and a dashboard.
+**Scope.** Experiments 1–4, including **Experiment 3, the cost sweep, which is
+the primary contribution**, with five reserve strategies and the `locked_1phase`
+comparator. Still to come: Opacus, RBAC, a hash-chained audit log, and a
+dashboard.
 
 **Never in scope:** implementing DP mathematics, and deriving the cap.
 
@@ -332,7 +331,7 @@ is therefore checked against committed state, never a stale snapshot. The
 isolation level is pinned in `app/db.py` rather than inherited, because this
 argument is specific to it: at REPEATABLE READ or SERIALIZABLE the same situation
 raises SQLSTATE `40001` instead of re-checking, which is safe only with a retry
-loop — the Phase 2 `serializable` strategy. Level in force for the runs below:
+loop — the `serializable` strategy. Level in force for the runs below:
 **{iso[0]}**, recorded in every results row.
 
 **A detail that matters when reading the code:** all three strategies report
@@ -379,7 +378,7 @@ How far the design generalises:
   commit-the-actual — the partial-commit path described in §2.
 
 `datasets.delta` is recorded but **not enforced**: there is no `delta_cap`,
-`delta_spent` or `delta_reserved`, and no predicate references it. Phase 2.
+`delta_spent` or `delta_reserved`, and no predicate references it.
 
 ## 5. Honesty conditions the results depend on
 

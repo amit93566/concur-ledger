@@ -340,7 +340,174 @@ def exp4_invariants(out="fig_exp4_invariants.png"):
     return path
 
 
+# --- Experiment 3 and the locking evidence ---------------------------------
+
+# Fixed per strategy, so a strategy keeps its colour on every figure. Hue order
+# checked with the palette validator; line style and markers repeat the identity.
+STRATEGY_STYLE = {
+    "atomic": ("#2a78d6", "o", "-"),
+    "for_update": ("#eb6834", "s", "-"),
+    "serializable": ("#1baf7a", "^", "-"),
+    "locked_1phase": ("#eda100", "D", "-"),
+    "naive": ("#e87ba4", "v", ":"),
+}
+STRATEGY_LABEL = {"naive": "naive (unsafe, for reference)"}
+
+
+def _exp3_rows(name):
+    """The full sweep, else the pilot, so the figure code can be tested early.
+    Returns (rows, source name); the source goes in the subtitle."""
+    for candidate in (name, "exp3_pilot" if name == "exp3_cost_sweep" else None,
+                      "exp3_pilot_noop" if name == "exp3_noop" else None):
+        rows = read(candidate) if candidate else []
+        if rows:
+            return rows, candidate
+    return [], name
+
+
+def _cells(rows, key):
+    """{(strategy, duration, n): (median, min, max, any timeouts)} over reps."""
+    g = {}
+    for r in rows:
+        if r.get(key) not in (None, ""):
+            g.setdefault((r["strategy"], int(r["duration_ms"]), int(r["n"])), []).append(r)
+    out = {}
+    for k, rs in g.items():
+        vals = sorted(float(r[key]) for r in rs)
+        out[k] = (vals[len(vals) // 2], vals[0], vals[-1],
+                  any(int(r["timeouts"]) > 0 for r in rs))
+    return out
+
+
+def _exp3_panels(cells, ylabel, ceiling=None, log=True, strategies=None):
+    durations = sorted({d for _, d, _ in cells})
+    fig, axes = plt.subplots(1, len(durations), figsize=(11, 5.6), sharey=True,
+                             facecolor=SURFACE, squeeze=False)
+    for ax, d in zip(axes[0], durations):
+        _style(ax)
+        ns = sorted({n for _, dd, n in cells if dd == d})
+        if ceiling:
+            xs = sorted(ceiling)
+            ax.plot(xs, [ceiling[n] for n in xs], color=INK_SOFT, ls="--", lw=1.5,
+                    label="no-op ceiling")
+        for strat, (colour, marker, ls) in STRATEGY_STYLE.items():
+            if strategies and strat not in strategies:
+                continue
+            pts = [(n, cells[(strat, d, n)]) for n in ns if (strat, d, n) in cells]
+            if not pts:
+                continue
+            xs = [n for n, _ in pts]
+            ax.plot(xs, [c[0] for _, c in pts], color=colour, ls=ls, lw=2, zorder=3,
+                    label=STRATEGY_LABEL.get(strat, strat))
+            ax.fill_between(xs, [c[1] for _, c in pts], [c[2] for _, c in pts],
+                            color=colour, alpha=0.15, lw=0, zorder=2)
+            # Hollow marker: timeouts in this cell, so the value is censored.
+            for n, c in pts:
+                ax.plot(n, c[0], marker=marker, ms=7, mec=SURFACE if not c[3] else colour,
+                        mew=1.2 if not c[3] else 1.8,
+                        mfc=colour if not c[3] else SURFACE, zorder=4)
+        ax.set_xscale("log", base=2)
+        if log:
+            ax.set_yscale("log")
+        ax.set_xticks(ns, [str(n) for n in ns])
+        ax.minorticks_off()
+        ax.set_title(f"{d / 1000:g} s operation" if d >= 1000 else f"{d} ms operation",
+                     loc="left", fontsize=11, color=INK)
+        ax.set_xlabel("concurrent workers (N, closed loop)", fontsize=10, color=INK_SOFT)
+    axes[0][0].set_ylabel(ylabel, fontsize=10, color=INK_SOFT)
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), frameon=False,
+               fontsize=9.5, labelcolor=INK_SOFT)
+    fig.subplots_adjust(top=0.78, bottom=0.2, left=0.08, right=0.97, wspace=0.06)
+    return fig
+
+
+def _save(fig, out):
+    path = RESULTS / out
+    fig.savefig(path, dpi=200, facecolor=SURFACE)
+    plt.close(fig)
+    return path
+
+
+def _note(source):
+    return " PILOT DATA (1 rep)." if "pilot" in source else ""
+
+
+def exp3_throughput(out="fig_exp3_throughput.png"):
+    rows, source = _exp3_rows("exp3_cost_sweep")
+    if not rows:
+        return None
+    noop, _ = _exp3_rows("exp3_noop")
+    ceiling = {n: v[0] for (_, _, n), v in _cells(noop, "completed_per_s").items()}
+    cells = _cells(rows, "completed_per_s")
+    fig = _exp3_panels(cells, "completed cycles per second (log)", ceiling)
+    longest = max(d for _, d, _ in cells)
+    lk = [v[0] for (s, d, _), v in cells.items() if s == "locked_1phase" and d == longest]
+    _titles(fig, "Experiment 3 \u00b7 holding the lock across the operation caps throughput",
+            f"locked_1phase peaks at {max(lk):.1f} cycles/s at {longest / 1000:g} s, "
+            f"whatever N is. Median of reps, band = min\u2013max.{_note(source)}")
+    return _save(fig, out)
+
+
+def exp3_latency(out="fig_exp3_latency.png"):
+    rows, source = _exp3_rows("exp3_cost_sweep")
+    if not rows:
+        return None
+    fig = _exp3_panels(_cells(rows, "lat_p99_ms"), "p99 full-cycle latency, ms (log)")
+    _titles(fig, "Experiment 3 \u00b7 tail latency of the full cycle",
+            "Hollow marker: client timeouts in that cell, so latency is censored "
+            f"(a lower bound).{_note(source)}")
+    return _save(fig, out)
+
+
+def exp3_retries(out="fig_exp3_retries.png"):
+    rows, source = _exp3_rows("exp3_cost_sweep")
+    if not rows:
+        return None
+    fig = _exp3_panels(_cells(rows, "retries_per_success"), "40001 retries per success",
+                       log=False, strategies={"serializable"})
+    _titles(fig, "Experiment 3 \u00b7 what serializable pays under contention",
+            f"Retries are spent on conflicts that a row lock would queue.{_note(source)}")
+    return _save(fig, out)
+
+
+def exp3_denials(out="fig_exp3_denials.png"):
+    rows, source = _exp3_rows("exp3_nearcap")
+    if not rows:
+        return None
+    fig = _exp3_panels(_cells(rows, "denial_rate"), "share of decisions denied",
+                       log=False)
+    _titles(fig, "Experiment 3 \u00b7 near the cap, held budget becomes denials",
+            "Each operation holds 1 of a cap of 10 and gives it back: at most 10 holds "
+            f"fit.{_note(source)}")
+    return _save(fig, out)
+
+
+def lock_waits(out="fig_lock_waits.png"):
+    rows = read("exp_lock_waits")
+    if not rows:
+        return None
+    strategies = sorted({r["strategy"] for r in rows})
+    fig, axes = plt.subplots(len(strategies), 1, figsize=(11, 5.2), sharex=True,
+                             sharey=True, facecolor=SURFACE, squeeze=False)
+    for ax, strat in zip(axes[:, 0], strategies):
+        _style(ax)
+        rs = [r for r in rows if r["strategy"] == strat]
+        t0 = float(rs[0]["t_s"])
+        ax.step([float(r["t_s"]) - t0 for r in rs], [int(r["waiting_on_lock"]) for r in rs],
+                where="post", color=STRATEGY_STYLE[strat][0], lw=1.5)
+        ax.set_title(strat, loc="left", fontsize=11, color=INK)
+        ax.set_ylabel("backends waiting", fontsize=10, color=INK_SOFT)
+    axes[-1][0].set_xlabel("seconds since the first of 5 bursts of 50 requests",
+                           fontsize=10, color=INK_SOFT)
+    _titles(fig, "Backends waiting on the dataset row lock",
+            "Sampled from pg_stat_activity by a separate connection, about every 1.6 ms.")
+    fig.subplots_adjust(top=0.80, bottom=0.11, left=0.08, right=0.97, hspace=0.35)
+    return _save(fig, out)
+
+
 if __name__ == "__main__":
     for p in filter(None, [granted_distribution(), exp1_breach_rate(),
-                          exp2_granted(), exp4_invariants()]):
+                          exp2_granted(), exp4_invariants(), exp3_throughput(),
+                          exp3_latency(), exp3_retries(), exp3_denials(), lock_waits()]):
         print(f"wrote {p.relative_to(ROOT)}")

@@ -24,6 +24,7 @@ class Settings:
     naive_race_delay_ms: float
     allow_admin: bool
     ledger_isolation: str
+    uvicorn_workers: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,6 +52,8 @@ class Settings:
             ledger_isolation=os.getenv("LEDGER_ISOLATION", "read_committed")
             .strip()
             .lower(),
+            # Informational: uvicorn reads its own flag. 1 except in Experiment 3.
+            uvicorn_workers=int(os.getenv("UVICORN_WORKERS", "1")),
         )
 
 

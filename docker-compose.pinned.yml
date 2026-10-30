@@ -1,0 +1,21 @@
+# Core pinning for the Experiment 3 overnight sweeps only.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.pinned.yml up -d
+#   (or: make pin / make unpin)
+#
+# Layout on the 20-vCPU dev machine, by the sibling pairs lscpu reports:
+#   db       0-7    four "cores"; Postgres is the contended resource
+#   app      8-9    one; the service is a single Python process
+#   harness  10-11  via taskset in the Makefile (EXP3_HARNESS_CPUS)
+#   12-19 left free for the OS, Docker and the keep-awake spinners
+#
+# Caveat for the method section: under WSL2 these are vCPUs, and Hyper-V does
+# not bind vCPUs to physical cores (this i7-13700H mixes P- and E-cores). The
+# pinning separates the three processes from each other; it does not control
+# which physical core each lands on. exp3_sweep.py records the affinity it
+# actually observes, rather than this file's intent.
+services:
+  db:
+    cpuset: "0-7"
+  app:
+    cpuset: "8-9"

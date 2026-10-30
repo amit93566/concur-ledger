@@ -32,6 +32,7 @@ from uuid import UUID
 from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
+from app import faults
 from app.adapters.base import MechanismAdapter, OperationResult
 from app.enforcement.base import (
     RECORD_INSERT,
@@ -124,6 +125,9 @@ async def run_locked_1phase(
             result = await adapter.run_operation(spec)
             timing["operation"] = _ms(t)
 
+            # Experiment 4: the operation "fails" with the lock held.
+            faults.abort_point("abort_before_commit")
+
             actual = result.epsilon
             if actual > req.epsilon_cost:
                 # Same rule as settle.commit. Raising rolls the transaction back.
@@ -134,6 +138,9 @@ async def run_locked_1phase(
                 "UPDATE datasets SET epsilon_spent = epsilon_spent + %s WHERE id = %s",
                 (actual, req.dataset_id),
             )
+            # Experiment 4: die holding the lock, with the charge applied but
+            # not committed. The whole transaction must vanish.
+            faults.point("crash_in_commit_txn")
             try:
                 cur = await conn.execute(
                     COMMITTED_INSERT,

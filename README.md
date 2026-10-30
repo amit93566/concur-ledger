@@ -7,9 +7,9 @@ jobs. This repository shows that a plausible naive enforcement implementation
 **can be raced into overspending the cap**, that a correct one **cannot**, and
 that a crash mid-protocol **cannot corrupt the ledger**.
 
-This is the **mid-term scope** (plan Phases 0–1, Experiments 1, 2 and 4).
-The cost sweep (Experiment 3 — the primary result), the other two strategies,
-and the governance layer are Phase 2–4 and deliberately absent.
+This covers Experiments 1–4: five reserve strategies, a one-transaction
+comparator (`locked_1phase`), the cost sweep, and the isolation, epsilon and
+extended fault evidence. The governance layer (audit log, RBAC) is still to come.
 
 Companion documents: `IMPLEMENTATION_PLAN.md` (what to build),
 `WORKFLOWS.md` (how to run it), `DEMO_CHECKLIST.md` (what to prove).
@@ -19,7 +19,7 @@ Companion documents: `IMPLEMENTATION_PLAN.md` (what to build),
 ## Results, reproduced on this machine
 
 **The canonical, always-current view is `make report`** — it regenerates
-`results/report.html` from the CSVs, organized by experiment (1, 2 and 4), so
+`results/report.html` from the CSVs, organized by experiment, so
 no number in it can drift from the evidence. The tables below are a snapshot
 from one such run and will differ in the tails from yours; breach/no-breach
 verdicts are stable, the exact overshoot figures are not.
@@ -29,19 +29,19 @@ headroom), N concurrent reserves of ε=2. Only 2 should ever succeed.
 
 | N | runs | breach rate | mean overshoot | max overshoot | mean granted | max granted |
 |---:|---:|---:|---:|---:|---:|---:|
-| 2 | 15 | **0%** | 0.000 | 0.000 | 2.00 | 2 |
+| 2 | 15 | 0% | 0.000 | 0.000 | 2.00 | 2 |
 | 3 | 15 | 100% | 2.000 | 2.000 | 3.00 | 3 |
 | 5 | 15 | 100% | 6.000 | 6.000 | 5.00 | 5 |
-| 10 | 15 | 100% | 5.600 | 8.000 | 4.80 | 6 |
-| 20 | 15 | 100% | 5.333 | 14.000 | 4.67 | 9 |
-| 50 | 15 | 100% | 7.200 | 14.000 | 5.60 | 9 |
+| 10 | 15 | 100% | 6.800 | 16.000 | 5.40 | 10 |
+| 20 | 15 | 100% | 3.600 | 8.000 | 3.80 | 6 |
+| 50 | 15 | 93% | 2.933 | 6.000 | 3.47 | 5 |
 
 N=2 is the control: two reserves of 2 fit exactly into 4 of headroom, so no
-breach occurs and none should. From N=3 the naive path breaches every time,
-granting up to **9 reservations where 2 fit** — the cap is exceeded by 14 ε,
-i.e. **2.4× the budget**.
+breach occurs and none should. Above it the naive path breaches in almost every
+run, granting up to **10 reservations where 2 fit** and overshooting the cap
+by 16 ε.
 
-Overshoot is not monotonic in N: it peaks around N=10 and then flattens. The
+Overshoot is not monotonic in N: it peaks around N=10 and then falls. The
 mechanism is **measured, not proposed**. Every naive caller reports the values it
 read in statement 1, and because each reservation increments `epsilon_reserved`
 from a seeded zero, that read is a position in the write sequence: `reserved = 0`
@@ -52,29 +52,39 @@ Counted per run (`reads_in_window`):
 |---:|---:|---:|---:|
 | 2 | 2.00 | 100% | 2.00 |
 | 3 | 3.00 | 100% | 3.00 |
-| 5 | 4.73 | 95% | 5.00 |
-| 10 | 3.47 | 35% | 4.80 |
-| 20 | 3.73 | 19% | 4.67 |
-| 50 | 4.73 | 9% | 5.60 |
+| 5 | 3.93 | 79% | 5.00 |
+| 10 | 3.73 | 37% | 5.40 |
+| 20 | 2.80 | 14% | 3.80 |
+| 50 | 2.80 | 6% | 3.47 |
 
 More contention does not produce more successful overspending: it produces more
 callers arriving *after* the writes have landed, who are correctly denied. The
 overspend is bounded by how many callers fit inside the window, not by how many
 compete.
 
-`make exp1c` supplies the intervention — hold N at 20 and widen the window with
+`make exp1c` supplies the intervention — hold N fixed and widen the window with
 `NAIVE_RACE_DELAY_MS` instead of raising N:
 
 | delay (ms) | read inside the window | mean granted | mean overshoot |
 |---:|---:|---:|---:|
-| 0 | 3.70 / 20 | 4.60 | 5.20 |
-| 5 | 6.00 / 20 | 7.10 | 10.20 |
-| 25 | 19.00 / 20 | 19.30 | 34.60 |
+| 0 | 3.20 / 20 | 4.00 | 4.00 |
+| 5 | 4.50 / 20 | 5.60 | 7.20 |
+| 25 | 10.30 / 20 | 13.00 | 22.00 |
 | 100 | 20.00 / 20 | 20.00 | 36.00 |
 
-Monotonic, saturating at ε 36 — the arithmetic maximum for 20 reserves of 2
-against a cap of 10 seeded at 6. The plateau is a property of the window, not of
-the concurrency. The delay is an instrument, not a claim about production
+`make exp1c-n50`, the same intervention at N=50:
+
+| delay (ms) | read inside the window | mean granted | mean overshoot |
+|---:|---:|---:|---:|
+| 0 | 3.10 / 50 | 4.60 | 5.20 |
+| 1 | 3.10 / 50 | 3.70 | 3.40 |
+| 5 | 4.20 / 50 | 5.00 | 6.00 |
+| 20 | 7.10 / 50 | 7.70 | 11.40 |
+
+Overshoot rises with the window, saturating at ε 36 at N=20 — the arithmetic
+maximum for 20 reserves of 2 against a cap of 10 seeded at 6. At N=50 the rise
+holds across the wider range, though the 1 ms point sits within the run-to-run
+noise of the 0 ms point. The delay is an instrument, not a claim about production
 timings; the breach result at `delay=0` needs no instrument at all. Exact per-N
 figures vary run to run; regenerate with `make exp1 exp1c`.
 
@@ -84,33 +94,49 @@ requests, issued one at a time instead of together.
 
 | N | runs | breach rate | reservations granted |
 |---:|---:|---:|---:|
-| 5 | 10 | **0%** | 2.00 |
-| 20 | 10 | **0%** | 2.00 |
+| 5 | 10 | 0% | 2.00 |
+| 20 | 10 | 0% | 2.00 |
 
 Exactly 2 granted, zero breaches. The implementation's logic is correct; only
 concurrency breaks it. That is what makes it a plausible first implementation
 rather than a strawman.
 
-**Experiment 2 — the fix holds.** Identical seed and load, `strategy=atomic`,
-with the database CHECK constraint still dropped:
+**Experiment 2 — the fix holds, for every safe strategy.** Identical seed and
+load at N = 2, 3, 5, 10, 20, 50, 100, with the database CHECK constraint still dropped
+(`make exp2-safe`):
 
-| N | 2 | 3 | 5 | 10 | 20 | 50 | 100 |
-|---|---|---|---|---|---|---|---|
-| breach rate (25 runs each) | 0% | 0% | 0% | 0% | 0% | 0% | 0% |
+| strategy | runs | breaches | N requests overlapping at every N |
+|---|---:|---:|---|
+| atomic | 175 | 0 | yes |
+| for_update | 175 | 0 | yes |
+| serializable | 175 | 0 | yes |
 
-175 runs, zero breaches, and **exactly 2 successes in every single run** — the
-denial count is not merely safe, it is exactly correct. I1, I2 and I4 hold in
-175/175.
+525 runs, zero breaches, and **exactly 2 successes in every single run** — the
+denial count is not merely safe, it is exactly correct. `serializable` needed
+24 | 75 | 145 | 138 | 106 | 87 | 85 retries in total at N = 2, 3, 5, 10, 20, 50, 100, with no give-ups. They fall at
+high N because late arrivals see a full budget and are denied without a conflict.
 
-**Experiment 4 — the crash is survivable.** 15/15 checks pass under controlled
-abort, 14/14 under real process kill — `os._exit` inside the reserve→commit gap,
-with Docker's own `RestartCount` going 0 → 3 as independent corroboration that
-the container really died and came back. Budget survives a crash as a hold,
+**Experiment 4 — the crash is survivable.** Budget survives a crash as a hold,
 never as a loss and never as a double-spend; a retried commit charges exactly
-once; releasing a committed reservation is rejected.
+once; releasing a committed reservation is rejected. `make exp4-ext` adds crash
+points the reserve→commit gap cannot reach, 10 repetitions each:
 
-The ledger also survives a full `docker compose down && up` — 209 records
-persisted through container recreation, which is what the named volume is for.
+| fault | what it reaches | checks passed |
+|---|---|---:|
+| controlled-abort | reserve, then fail before commit | 22/22 |
+| process-kill | `os._exit` in the reserve→commit gap | 21/21 |
+| kill-in-reserve | inside the reserve transaction | 5/5 |
+| kill-in-commit | between the two UPDATEs of a commit | 6/6 |
+| kill-after-commit | committed, client not yet told | 5/5 |
+| kill-in-commit-locked | `locked_1phase`, charge applied, not committed | 5/5 |
+| kill-after-commit-locked | `locked_1phase`, committed, client not yet told | 5/5 |
+| db-kill | SIGKILL Postgres under N=20 load | 4/4 |
+| kill-under-load | service crash with 19 others in flight | 4/4 |
+
+In db-kill, 1482 acknowledged, 0 missing, and 149 committed but never acknowledged: the commit
+landed while the client saw an error. That is the case retry by idempotency key
+exists for. Not tested: disk loss, a disk that lies about fsync, network
+partitions, or clock faults.
 
 **Real ε, end to end.** An OpenDP noisy count at Laplace scale 0.5 costs
 ε = 2.0. Against cap 10 / spent 6, two such queries commit (reaching exactly
@@ -236,9 +262,15 @@ RETURNING epsilon_spent, epsilon_reserved;
 -- rowcount 1 -> reserved ; rowcount 0 -> denied
 ```
 
-One statement, so check and write cannot interleave. `for_update` and
-`serializable` are Phase 2 and return HTTP 501 rather than silently falling back
-to something safe.
+One statement, so check and write cannot interleave.
+
+Two more safe strategies exist for comparison. `for_update` takes the row lock at
+the read and checks in Python, so the lock is held for longer. `serializable`
+runs the read, check and write in one SERIALIZABLE transaction and retries
+SQLSTATE `40001` up to 10 times with jittered backoff; a give-up returns 503 and
+is never counted as a denial. `locked_1phase` is the design this protocol
+rejects, built only as a comparator: it holds the row lock across the operation,
+so it exists only through `/run`, and `/reserve` returns 400 for it.
 
 ### Invariants
 
@@ -249,7 +281,7 @@ safety argument is specific to it: when a concurrent `UPDATE` commits first,
 Postgres re-evaluates the second updater's `WHERE` against the newly committed
 row version and returns rowcount 0 if it no longer fits. At REPEATABLE READ or
 SERIALIZABLE the same situation raises SQLSTATE `40001` instead, which is safe
-only with a retry loop — that is the Phase 2 `serializable` strategy. The server
+only with a retry loop — that is the `serializable` strategy. The server
 default was already READ COMMITTED, so pinning it invalidates no earlier result;
 it makes a dependency explicit. Every results row now records the level in force.
 
@@ -314,22 +346,40 @@ default bridge, so `pip install` inside the image build cannot resolve pypi.org
 without it. It affects the build only, never the running container's networking,
 and is harmless on other platforms.
 
-### Measurement-validity caveat
+### Measurement-validity caveats
 
-The harness and the server share one machine. `reserved_at_spread_ms` grows with
-N — ~2 ms at N=5, ~102 ms at N=50, ~224 ms at N=100 — so at the top of the range
-some of that spread is client-side scheduling, not database behaviour. This does
-not affect the Experiment 1 and 2 *safety* conclusions (a breach either happened
-or it did not), but it is why Experiment 3's latency numbers will need a no-op
-baseline and a stated saturation point.
+The harness and the server share one machine, and four things about that bear on
+how the numbers are read.
+
+- **Harness bug, fixed; mid-term figures are superseded.** The mid-term harness
+  sized its client connection limit from the first N in a sweep, so "N=100" had
+  at most 22 requests in flight. Every number here is from the fixed harness,
+  which records `max_in_flight`: all N requests overlapped in every run. The
+  mid-term safety conclusions still held.
+- **Admission spread.** The single service process admits requests one at a time,
+  about 2–5 ms apart, so `arrival_spread_ms` grows with N: ~15 ms at N=5,
+  ~208 ms at N=50, ~482 ms at N=100. This does not affect the safety
+  conclusions (a breach either happened or it did not), but it is why only a few
+  backends wait on the row lock at any instant.
+- **Idle-vCPU wake-up latency (WSL2).** An atomic reserve takes ~4 ms back to back,
+  ~9 ms after a 10 ms idle gap and ~20 ms after 50 ms. Experiment 3 runs SCHED_IDLE
+  spinners to remove this (`--keep-awake`, recorded per row). Experiments 1, 2 and
+  4 do not, so treat their latencies as upper bounds; their verdicts are unaffected.
+- **Ceilings in Experiment 3.** At 10 ms operations, throughput is capped by the one
+  hot dataset row, naive included; four uvicorn workers did not raise it (`UVICORN_WORKERS`
+  stays, default 1). The no-op ceiling is itself limited by the single-threaded
+  client. Core pinning separates processes onto vCPUs, not physical cores; each
+  row records the affinity observed.
 
 ---
 
 ## Layout
 
 ```
-app/enforcement/   naive.py, atomic.py, settle.py (commit/release), base.py
-app/adapters/      opendp_adapter.py (real eps), passthrough.py (stub)
+app/enforcement/   naive.py, naive_single_txn.py, atomic.py, for_update.py, serializable.py,
+                   locked_1phase.py, settle.py (commit/release), base.py
+app/faults.py      named crash points for Experiment 4
+app/adapters/      opendp_adapter.py (real eps), passthrough.py, synthetic.py (stubs)
 app/ledger/        init_db.py (schema + CHECK flag), queries.py (invariants)
 app/main.py        reserve / commit / release / run, fault injection
 experiments/       harness_asyncio.py (Exp 1&2), crash_test.py (Exp 4), opendp_demo.py
@@ -351,7 +401,8 @@ safety result; each bounds what it covers.
   moves the failure from "budget locked forever" to "budget locked for at most
   one lease period", and it introduces a real trade-off — too short a lease
   releases a hold while the operation is still running, which is the one way
-  this design could double-spend. Not built; Phase 2.
+  this design could double-spend. Not built: on an unknown outcome the specified
+  policy is to charge the hold, not release it (fail closed for privacy).
 - **One contended row.** Every experiment targets a single dataset row. That is
   the worst case for safety and the right choice for proving the cap holds, but
   it says nothing about throughput across many datasets, where the hotspot
@@ -383,12 +434,10 @@ safety result; each bounds what it covers.
 
 ## Scope
 
-**In (mid-term):** two-phase protocol, naive + atomic, OpenDP adapter,
-Experiments 1/2/4, Gate A.
+**In:** two-phase protocol, all reserve strategies, `locked_1phase`, OpenDP and
+synthetic adapters, Experiments 1–4 and their extensions.
 
-**Out (Phase 2–4):** `for_update` and `serializable` strategies, the synthetic
-duration adapter, Experiment 3 (the cost sweep — the primary result), Opacus,
-RBAC, hash-chained audit log, dashboard.
+**Still to come:** hash-chained audit log, RBAC, dashboard, Opacus.
 
 **Never in scope:** implementing DP mathematics, and deriving the cap. The cap is
 an organizational **policy input**; this system enforces whatever cap it is

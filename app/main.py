@@ -25,6 +25,7 @@ from app.adapters import (  # noqa: F401  (registration)
     passthrough,
     synthetic,
 )
+from app import faults
 from app.config import settings
 from app.db import close_pool, get_pool, open_pool
 from app.enforcement import (  # noqa: F401  (registration)
@@ -77,7 +78,11 @@ STARTED_AT = time.time()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     pool = await open_pool()
+    # With several uvicorn workers every one runs this at once; concurrent
+    # CREATE ... IF NOT EXISTS can still collide, so the setup is serialised on
+    # a transaction-scoped advisory lock. A no-op with one worker.
     async with pool.connection() as conn:
+        await conn.execute("SELECT pg_advisory_xact_lock(7342001)")
         await apply_schema(conn)
         # Every result rests on the isolation level, so a mismatch between what
         # was configured and what the session reports is a startup failure,
@@ -92,6 +97,7 @@ async def lifespan(app: FastAPI):
 
     try:
         async with pool.connection() as conn:
+            await conn.execute("SELECT pg_advisory_xact_lock(7342001)")
             await set_constraint(conn, settings.enforce_db_constraint)
     except Exception as exc:
         # Re-adding the CHECK fails if a previous Experiment 1 run left the
@@ -151,6 +157,8 @@ async def config():
         "isolation_level": isolation,
         "naive_race_delay_ms": settings.naive_race_delay_ms,
         "pool_max_size": settings.pool_max_size,
+        # Each worker is a process with its own pool of pool_max_size.
+        "uvicorn_workers": settings.uvicorn_workers,
         # Derived from the registry, not restated, so this cannot drift out of
         # step with what is actually registered.
         "implemented_strategies": list(IMPLEMENTED_STRATEGIES),
@@ -427,6 +435,17 @@ async def run_job(dataset_id: UUID, body: RunBody):
         actor=body.actor,
     )
 
+    if body.fault != "none":
+        _admin_only()
+        if not faults.supported(
+            body.fault, body.strategy, two_phase=body.strategy not in FULL_CYCLE_ONLY
+        ):
+            raise HTTPException(
+                400, f"fault '{body.fault}' has no injection point on '{body.strategy}'"
+            )
+        # Request-scoped: other in-flight requests never see it.
+        faults.active_fault.set(body.fault)
+
     if body.strategy in FULL_CYCLE_ONLY:
         return await _run_locked_1phase(req, adapter, body, cost, t_start)
 
@@ -463,13 +482,11 @@ async def run_job(dataset_id: UUID, body: RunBody):
     # ---- no transaction is held for the remainder of this block ----
     try:
         if body.fault == "crash_before_commit":
-            _admin_only()
             # Hard-kill the process in the reserve->commit gap. The reservation
             # is already durable; nothing has been committed. Docker restarts
             # the service and crash_test.py then checks the invariants.
             os._exit(3)
         if body.fault == "abort_before_commit":
-            _admin_only()
             raise RuntimeError("injected fault: aborted between reserve and commit")
 
         t = time.perf_counter()
@@ -482,6 +499,9 @@ async def run_job(dataset_id: UUID, body: RunBody):
         # The compensating action. The hold is returned; spent is untouched.
         await do_release(get_pool(), reserved.reservation_id)
         raise HTTPException(500, f"operation failed, reservation released: {exc}")
+    # Committed and durable, but the client has not been told. A retry with the
+    # same key must not charge twice.
+    faults.point("crash_after_commit")
     timing["total"] = _ms_since(t_start)
 
     return {
@@ -501,10 +521,6 @@ async def run_job(dataset_id: UUID, body: RunBody):
 async def _run_locked_1phase(
     req: ReserveRequest, adapter, body: RunBody, cost: Decimal, t_start: float
 ):
-    # Fault points for this path come with the fault-hook module; until then a
-    # fault request here would silently test nothing, so refuse it.
-    if body.fault != "none":
-        raise HTTPException(400, "fault injection is not supported for locked_1phase")
     try:
         out = await run_locked_1phase(get_pool(), req, adapter, body.spec)
     except DatasetNotFound:
@@ -513,6 +529,7 @@ async def _run_locked_1phase(
         # The transaction has already rolled back: no record, no charge, no hold.
         raise HTTPException(500, f"operation failed, transaction rolled back: {exc}")
 
+    faults.point("crash_after_commit")
     timing = dict(out.timing_ms or {})
     timing["total"] = _ms_since(t_start)
     payload = {

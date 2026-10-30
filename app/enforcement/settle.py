@@ -22,6 +22,8 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
+from app import faults
+
 
 class ReservationNotFound(Exception):
     pass
@@ -101,6 +103,10 @@ async def _settle(
             """,
             (terminal_status, committed_value, reservation_id),
         )
+
+        # Experiment 4: die with the record marked settled but the dataset not
+        # yet updated. The single transaction must make that state invisible.
+        faults.point("crash_in_commit_txn")
 
         # If actual < held, the difference returns to available budget
         # automatically: reserved drops by the full hold, spent rises by only

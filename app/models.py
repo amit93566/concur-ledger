@@ -43,8 +43,9 @@ class CommitBody(BaseModel):
 class RunBody(BaseModel):
     """Full reserve -> run_operation -> commit cycle (plan section 7).
 
-    `fault` injects a failure in the gap between reserve and commit, which is
-    the window Experiment 4 exists to test.
+    `fault` injects a failure. The first two act in the gap between reserve and
+    commit; the `crash_in_*` / `crash_after_commit` points (app/faults.py) kill
+    the process inside a transaction or just after one.
     """
 
     job_id: str
@@ -53,7 +54,15 @@ class RunBody(BaseModel):
     adapter: str = "opendp"
     spec: dict[str, Any] = Field(default_factory=lambda: {"kind": "count", "scale": 0.5})
     actor: str | None = None
-    fault: Literal["none", "abort_before_commit", "crash_before_commit"] = "none"
+    fault: Literal[
+        "none",
+        "abort_before_commit",
+        "crash_before_commit",
+        # the named points in app/faults.py
+        "crash_in_reserve_txn",
+        "crash_in_commit_txn",
+        "crash_after_commit",
+    ] = "none"
 
 
 class ConstraintBody(BaseModel):
