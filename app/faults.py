@@ -13,17 +13,13 @@ the same event loop never see it, which is what lets `kill-under-load` crash
 one request while others are in flight.
 
 Points (where `point(name)` is called):
-  crash_in_reserve_txn  atomic.py, for_update.py: after the record INSERT,
-                        before COMMIT. Expect: no record, no hold.
+  crash_in_reserve_txn  atomic.py, for_update.py, serializable.py: after the
+                        record INSERT, before COMMIT. Expect: no record, no hold.
   crash_in_commit_txn   settle.py: between the record UPDATE and the dataset
-                        UPDATE; locked_1phase.py: after the charge, before
-                        COMMIT. Expect: the record unchanged, nothing charged.
+                        UPDATE. Expect: the record unchanged, nothing charged.
   crash_after_commit    main.py run_job: after commit returned, before the
                         response. Expect: committed exactly once; a retried
                         commit returns already_settled.
-  abort_before_commit   (an exception, via abort_point) locked_1phase.py:
-                        after the operation, before the charge. Expect: the
-                        transaction rolls back -- no record, no charge.
 """
 
 import os
@@ -39,28 +35,20 @@ def point(name: str) -> None:
         os._exit(3)
 
 
-def abort_point(name: str) -> None:
-    """A failure the application sees (an exception), not a dead process."""
-    if active_fault.get() == name:
-        raise RuntimeError(f"injected fault: {name}")
-
-
 # Which faults reach a real point on which path. A fault requested on a path
 # that never calls its point would "pass" while testing nothing, so run_job
 # refuses those combinations instead.
 SUPPORTED = {
-    "crash_in_reserve_txn": {"atomic", "for_update"},
-    "crash_before_commit": "two_phase",
+    "crash_in_reserve_txn": {"atomic", "for_update", "serializable"},
+    "crash_before_commit": "any",
     "abort_before_commit": "any",
     "crash_in_commit_txn": "any",
     "crash_after_commit": "any",
 }
 
 
-def supported(fault: str, strategy: str, two_phase: bool) -> bool:
+def supported(fault: str, strategy: str) -> bool:
     rule = SUPPORTED.get(fault)
     if rule == "any":
         return True
-    if rule == "two_phase":
-        return two_phase
     return rule is not None and strategy in rule

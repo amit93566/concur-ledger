@@ -7,9 +7,9 @@ jobs. This repository shows that a plausible naive enforcement implementation
 **can be raced into overspending the cap**, that a correct one **cannot**, and
 that a crash mid-protocol **cannot corrupt the ledger**.
 
-This covers Experiments 1–4: five reserve strategies, a one-transaction
-comparator (`locked_1phase`), the cost sweep, and the isolation, epsilon and
-extended fault evidence. The governance layer (audit log, RBAC) is still to come.
+This covers Experiments 1–4: four reserve strategies, the cost sweep, the
+isolation, epsilon and extended fault evidence, and a governance layer (a
+tamper-evident audit log and role-based access).
 
 Companion documents: `IMPLEMENTATION_PLAN.md` (what to build),
 `WORKFLOWS.md` (how to run it), `DEMO_CHECKLIST.md` (what to prove).
@@ -126,17 +126,59 @@ points the reserve→commit gap cannot reach, 10 repetitions each:
 | controlled-abort | reserve, then fail before commit | 22/22 |
 | process-kill | `os._exit` in the reserve→commit gap | 21/21 |
 | kill-in-reserve | inside the reserve transaction | 5/5 |
+| kill-in-reserve-serializable | the same, at SERIALIZABLE | 5/5 |
 | kill-in-commit | between the two UPDATEs of a commit | 6/6 |
 | kill-after-commit | committed, client not yet told | 5/5 |
-| kill-in-commit-locked | `locked_1phase`, charge applied, not committed | 5/5 |
-| kill-after-commit-locked | `locked_1phase`, committed, client not yet told | 5/5 |
 | db-kill | SIGKILL Postgres under N=20 load | 4/4 |
 | kill-under-load | service crash with 19 others in flight | 4/4 |
 
-In db-kill, 1482 acknowledged, 0 missing, and 149 committed but never acknowledged: the commit
+In db-kill, 2126 acknowledged, 0 missing, and 172 committed but never acknowledged: the commit
 landed while the client saw an error. That is the case retry by idempotency key
 exists for. Not tested: disk loss, a disk that lies about fsync, network
 partitions, or clock faults.
+
+**Experiment 3 — what safety costs.** Closed loop over `/run`: 2 × 320 cells
+(4 strategies × 8 values of N × 2 durations × 5 reps), 30 s measured per cell. No
+safe strategy broke I1 or I2 in either regime, with 0 client timeouts and 0
+deadlocks. Median completed cycles/s, unconstrained regime:
+
+| 10 ms operation | N=1 | 2 | 4 | 8 | 16 | 32 | 64 | 100 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| atomic | 46.9 | 85.4 | 151.2 | 161.5 | 150.5 | 133.8 | 128.9 | 111.4 |
+| for_update | 45.0 | 84.6 | 144.5 | 152.2 | 148.6 | 132.5 | 128.4 | 113.7 |
+| serializable | 44.7 | 77.4 | 100.7 | 99.4 | 77.0 | 39.6 | 16.7 | 34.6 |
+| naive (unsafe) | 42.8 | 82.2 | 133.3 | 160.9 | 150.1 | 135.5 | 127.3 | 107.3 |
+| no-op ceiling | 304 | 317 | 456 | 356 | 283 | 220 | 234 | 210 |
+
+| 1 s operation | N=1 | 2 | 4 | 8 | 16 | 32 | 64 | 100 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| atomic | 1.0 | 2.0 | 4.0 | 8.0 | 16.0 | 31.1 | 61.9 | 97.0 |
+| for_update | 1.0 | 2.0 | 4.0 | 7.9 | 15.6 | 31.9 | 62.7 | 96.2 |
+| serializable | 1.0 | 2.0 | 4.0 | 7.8 | 15.5 | 31.2 | 44.2 | 12.9 |
+| naive (unsafe) | 1.0 | 2.0 | 4.0 | 8.0 | 16.0 | 31.6 | 62.7 | 96.3 |
+
+- **`atomic` and `for_update` cost nothing above run-to-run noise.** They track
+  `naive` at every N and both durations, so once the check is in the database,
+  safety is close to free in throughput. At 1 s they scale with N, because no
+  lock is held during the operation.
+- **`serializable` is the expensive one.** At 10 ms it peaks at about 100/s,
+  then falls to 16.7/s at N=64. From N=32 more requests give up than succeed:
+  60,751 give-ups across both regimes, none from any other strategy. Its median
+  retries per success reach 38. At 1 s it matches the others up to N=32, then
+  drops to 12.9/s at N=100 against 97/s for `atomic`.
+- **Read `serializable` at high N as a range.** Repetitions split into slow and
+  fast groups: 9.6–60.3/s at N=100, 10 ms. The rise in its median from N=64 to
+  N=100 is that split, not a recovery.
+- **Near the cap, at 1 s, the cap sets the throughput.** Each operation holds 1 of
+  a cap of 10, so 10 holds at once allow 10 cycles/s. The safe strategies stay at
+  about 10/s and deny over 90% of decisions from N=16. `naive` reaches 12.7/s:
+  more than 10 holds were running at once. Its end-of-cell invariants still pass,
+  because the actual cost is 0 and the ledger ends empty, so this overshoot shows
+  only in the throughput.
+- **Near the cap, at 10 ms, denials are noisy and not monotonic in N.** Denial share
+  peaks around N=32 for `atomic` and N=64 for `for_update`, then drops. The likely
+  reason is that most requests are queued rather than holding budget at high N,
+  but this was not tested.
 
 **Real ε, end to end.** An OpenDP noisy count at Laplace scale 0.5 costs
 ε = 2.0. Against cap 10 / spent 6, two such queries commit (reaching exactly
@@ -268,9 +310,10 @@ Two more safe strategies exist for comparison. `for_update` takes the row lock a
 the read and checks in Python, so the lock is held for longer. `serializable`
 runs the read, check and write in one SERIALIZABLE transaction and retries
 SQLSTATE `40001` up to 10 times with jittered backoff; a give-up returns 503 and
-is never counted as a denial. `locked_1phase` is the design this protocol
-rejects, built only as a comparator: it holds the row lock across the operation,
-so it exists only through `/run`, and `/reserve` returns 400 for it.
+is never counted as a denial.
+
+`naive_txn` is a variant of `naive` used in the race analysis, not a fifth
+strategy.
 
 ### Invariants
 
@@ -370,6 +413,21 @@ how the numbers are read.
   stays, default 1). The no-op ceiling is itself limited by the single-threaded
   client. Core pinning separates processes onto vCPUs, not physical cores; each
   row records the affinity observed.
+- **Experiment 3 ran in two sessions, partly on battery.** The cells were measured
+  on 30 Oct and 1 Nov, and 81 of the unconstrained cells ran on battery. Those
+  cells have a median ratio of 0.99 to the other reps of the same cell, with the
+  largest gaps in the cells that are noisy anyway, so none were re-run. Power
+  state was not logged for the 30 Oct cells.
+- **Dropped connections.** 34 requests across the 640 cells failed with `Server
+  disconnected`; in the unconstrained regime that is 10 of 758,585. They appear
+  mainly at high N and in 10 ms cells, 6 of the 10 within 1.4 s of a cell
+  starting. A keep-alive race would fit, but the cause is not established. Every
+  affected cell held its invariants.
+- **Experiment 3 predates the governance layer.** Its numbers come from a build
+  without the audit trigger or RBAC. A 6-cell check with the trigger on (1 rep)
+  was inside the measured range for `atomic` and `serializable` at N=64, and
+  5–10% below the bottom of it for `for_update` at N=64 and `serializable` at
+  N=8, so a small audit overhead is possible. It was not measured properly.
 
 ---
 
@@ -377,12 +435,14 @@ how the numbers are read.
 
 ```
 app/enforcement/   naive.py, naive_single_txn.py, atomic.py, for_update.py, serializable.py,
-                   locked_1phase.py, settle.py (commit/release), base.py
+                   settle.py (commit/release), base.py
+app/auth.py        API keys and roles
 app/faults.py      named crash points for Experiment 4
 app/adapters/      opendp_adapter.py (real eps), passthrough.py, synthetic.py (stubs)
 app/ledger/        init_db.py (schema + CHECK flag), queries.py (invariants)
 app/main.py        reserve / commit / release / run, fault injection
-experiments/       harness_asyncio.py (Exp 1&2), crash_test.py (Exp 4), opendp_demo.py
+experiments/       harness_asyncio.py (Exp 1&2), exp3_sweep.py, crash_test.py (Exp 4),
+                   opendp_demo.py, verify_audit.py, demo_audit.py, demo_rbac.py
 docs/              privatekube-comparison.md (Gate A)
 results/           generated CSVs
 ```
@@ -406,8 +466,16 @@ safety result; each bounds what it covers.
 - **One contended row.** Every experiment targets a single dataset row. That is
   the worst case for safety and the right choice for proving the cap holds, but
   it says nothing about throughput across many datasets, where the hotspot
-  disappears and the strategies should converge. Experiment 3 should carry at
-  least one multi-dataset arm.
+  disappears and the strategies should converge. Experiment 3 has no
+  multi-dataset arm.
+- **The audit chain proves less than it may seem to.** It shows that sealed rows
+  were not changed. Rows are unprotected until sealed, about a second later.
+  Someone with full database access can rewrite the whole chain or cut rows off
+  its end; only comparing the head printed by `make verify-audit` with a copy kept
+  elsewhere catches that.
+- **RBAC is off by default.** The harnesses send no key, so it runs only when
+  `API_KEYS` is set. Any real deployment must set it. Keys are static, with no
+  rotation or expiry.
 - **Basic composition, δ = 0.** The ledger sums ε linearly. `delta` is stored
   but no predicate reads it, and no advanced-composition or RDP accountant is
   wired in. This is deliberate — composition is the DP library's job, not the
@@ -434,10 +502,10 @@ safety result; each bounds what it covers.
 
 ## Scope
 
-**In:** two-phase protocol, all reserve strategies, `locked_1phase`, OpenDP and
-synthetic adapters, Experiments 1–4 and their extensions.
+**In:** two-phase protocol, all reserve strategies, OpenDP and synthetic adapters,
+Experiments 1–4 and their extensions, a hash-chained audit log, and RBAC.
 
-**Still to come:** hash-chained audit log, RBAC, dashboard, Opacus.
+**Not built:** dashboard, Opacus.
 
 **Never in scope:** implementing DP mathematics, and deriving the cap. The cap is
 an organizational **policy input**; this system enforces whatever cap it is

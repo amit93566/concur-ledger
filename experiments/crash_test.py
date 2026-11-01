@@ -290,15 +290,12 @@ async def kill_point(client, args, checks, fault):
             ok = ok and again is not None and again.status_code == 200
             ok = ok and [r["status"] for r in await records_for(client, dataset_id, key)] == ["committed"]
         elif fault == "crash_in_commit_txn":
-            if args.strategy == "locked_1phase":
-                ok = status == []  # one transaction: nothing survives
-            else:
-                ok = status == ["reserved"]  # the reserve survived, commit did not
-                held += 1
+            ok = status == ["reserved"]  # the reserve survived, commit did not
+            held += 1
         else:  # crash_after_commit
             ok = status == ["committed"]
             rid = recs[0]["id"] if recs else None
-            if ok and args.strategy != "locked_1phase":
+            if ok:
                 retry = (await client.post(f"/reservations/{rid}/commit", json={"actual_cost": args.cost})).json()
                 ok = retry.get("already_settled") is True
             again = await run_with_fault(client, dataset_id, key, "none", args.strategy, args.cost)
@@ -643,8 +640,7 @@ def parse_args():
     p.add_argument(
         "--strategy",
         default="atomic",
-        choices=["naive", "naive_txn", "atomic", "for_update", "serializable",
-                 "locked_1phase"],
+        choices=["naive", "naive_txn", "atomic", "for_update", "serializable"],
     )
     p.add_argument("--base-url", dest="base_url", default="http://localhost:8000")
     p.add_argument("--out", default=None, help="write per-check results CSV here")

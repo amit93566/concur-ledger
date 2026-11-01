@@ -198,6 +198,25 @@ exp-lock-waits: ## PostgreSQL locking -- sample backends waiting on the row lock
 demo-locks:    ## DEMO -- two sessions: one blocks on the other's row lock, then re-checks
 	$(PY) experiments/demo_locks.py
 
+# --- Phase 7: governance ---------------------------------------------------
+
+verify-audit:  ## walk the audit hash chain, exit 1 at the first broken link
+	$(PY) experiments/verify_audit.py
+
+demo-audit:    ## DEMO -- edit a sealed audit row; verification fails at that row
+	$(PY) experiments/demo_audit.py
+
+# RBAC is off by default, because the harnesses send no key, so this restarts
+# the service with demo keys and restores it however the demo ends.
+DEMO_KEYS = demo-admin:demo-admin-key:admin,demo-analyst:demo-analyst-key:analyst,demo-viewer:demo-viewer-key:viewer
+
+demo-rbac:     ## DEMO -- viewer gets 403 on reserve; actor comes from the key
+	@trap 'docker compose up -d app >/dev/null 2>&1; \
+	       for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done' EXIT; \
+	API_KEYS='$(DEMO_KEYS)' docker compose up -d app >/dev/null 2>&1 || exit 1; \
+	for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done; \
+	$(PY) experiments/demo_rbac.py
+
 # Crash points INSIDE and AFTER the transactions (app/faults.py). Needs the
 # default single uvicorn worker. One CSV per mode, same check-row format as exp4.
 exp4-ext:      ## Experiment 4 extended -- 5 more fault modes, 10 reps each -> results/exp4_*.csv
@@ -205,10 +224,8 @@ exp4-ext:      ## Experiment 4 extended -- 5 more fault modes, 10 reps each -> r
 	  $(PY) experiments/crash_test.py --mode $$m --runs 10 \
 	    --out results/exp4_$$(echo $$m | tr - _).csv || exit 1; \
 	done
-	$(PY) experiments/crash_test.py --mode kill-in-commit --strategy locked_1phase \
-	  --runs 10 --out results/exp4_kill_in_commit_locked.csv
-	$(PY) experiments/crash_test.py --mode kill-after-commit --strategy locked_1phase \
-	  --runs 10 --out results/exp4_kill_after_commit_locked.csv
+	$(PY) experiments/crash_test.py --mode kill-in-reserve --strategy serializable \
+	  --runs 10 --out results/exp4_kill_in_reserve_serializable.csv
 
 # The same intervention at N=50 with finer delays, as the locking section asks.
 exp1c-n50:     ## Experiment 1c at N=50, delays 0/1/5/20 ms -> results/exp1c_n50.csv

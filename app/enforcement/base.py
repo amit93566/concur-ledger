@@ -3,9 +3,6 @@
 The `strategy` request parameter selects the reserve implementation, so every
 strategy runs against identical load. A name in ALL_STRATEGIES that is not yet
 registered fails loudly rather than silently falling back to something safe.
-
-`locked_1phase` is deliberately NOT a reserve strategy: it holds its transaction
-across the operation, so it exists only as a full cycle (see locked_1phase.py).
 """
 
 from dataclasses import dataclass
@@ -16,8 +13,6 @@ from uuid import UUID
 from psycopg_pool import AsyncConnectionPool
 
 ALL_STRATEGIES = ("naive", "naive_txn", "atomic", "for_update", "serializable")
-# Reachable through /run only; see locked_1phase.py.
-FULL_CYCLE_ONLY = ("locked_1phase",)
 IMPLEMENTED_STRATEGIES = (
     "naive",
     "naive_txn",
@@ -93,11 +88,6 @@ def get_strategy(name: str) -> ReserveFn:
         raise StrategyNotImplemented(
             f"strategy '{name}' is scheduled for Phase 2 (the cost sweep); "
             f"implemented now: {', '.join(IMPLEMENTED_STRATEGIES)}"
-        )
-    if name in FULL_CYCLE_ONLY:
-        raise ValueError(
-            f"'{name}' holds its transaction across the operation, so it has no "
-            "separate reserve step; it is available only through /run"
         )
     raise ValueError(f"unknown strategy '{name}'")
 

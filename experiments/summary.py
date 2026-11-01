@@ -348,7 +348,8 @@ if sweep:
             )
             + "</div>",
             "Figures and the full table are in results/report.html. All contention is "
-            "on one row by design: that ceiling is structural.",
+            "on one row by design: that ceiling is structural. Only serializable gives "
+            "up under contention.",
         )
     )
 

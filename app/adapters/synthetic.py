@@ -6,9 +6,7 @@ take a controlled, known time and nothing else. This adapter sleeps for
 used, so the cost sweep measures the ledger and the lock hold, not OpenDP.
 
 The sleep is an `asyncio.sleep`: it yields the event loop, the way a real
-operation awaiting a remote query engine would. That matters for the comparison
--- under `locked_1phase` the row lock is held for exactly this sleep, under the
-two-phase strategies nothing is.
+operation awaiting a remote query engine would, and no lock is held during it.
 
 Why the default epsilon is 0.001: the ledger columns are NUMERIC(12,6), so a
 cap tops out near 10^6. A 900 000 cap never binds at 0.001 a call, which is the

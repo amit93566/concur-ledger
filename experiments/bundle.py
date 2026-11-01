@@ -229,9 +229,9 @@ This repository demonstrates three things empirically:
    never as a loss and never as a double-spend.
 
 **Scope.** Experiments 1–4, including **Experiment 3, the cost sweep, which is
-the primary contribution**, with five reserve strategies and the `locked_1phase`
-comparator. Still to come: Opacus, RBAC, a hash-chained audit log, and a
-dashboard.
+the primary contribution**, with four reserve strategies (plus `naive_txn`, a
+variant of naive used in the race analysis). It also has a hash-chained audit log and RBAC. Not built:
+Opacus and a dashboard.
 
 **Never in scope:** implementing DP mathematics, and deriving the cap.
 

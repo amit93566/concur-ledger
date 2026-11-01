@@ -348,7 +348,6 @@ STRATEGY_STYLE = {
     "atomic": ("#2a78d6", "o", "-"),
     "for_update": ("#eb6834", "s", "-"),
     "serializable": ("#1baf7a", "^", "-"),
-    "locked_1phase": ("#eda100", "D", "-"),
     "naive": ("#e87ba4", "v", ":"),
 }
 STRATEGY_LABEL = {"naive": "naive (unsafe, for reference)"}
@@ -441,11 +440,14 @@ def exp3_throughput(out="fig_exp3_throughput.png"):
     ceiling = {n: v[0] for (_, _, n), v in _cells(noop, "completed_per_s").items()}
     cells = _cells(rows, "completed_per_s")
     fig = _exp3_panels(cells, "completed cycles per second (log)", ceiling)
-    longest = max(d for _, d, _ in cells)
-    lk = [v[0] for (s, d, _), v in cells.items() if s == "locked_1phase" and d == longest]
-    _titles(fig, "Experiment 3 \u00b7 holding the lock across the operation caps throughput",
-            f"locked_1phase peaks at {max(lk):.1f} cycles/s at {longest / 1000:g} s, "
-            f"whatever N is. Median of reps, band = min\u2013max.{_note(source)}")
+    shortest = min(d for _, d, _ in cells)
+    peak = {s: max(v[0] for (ss, d, _), v in cells.items() if ss == s and d == shortest)
+            for s in ("atomic", "for_update", "serializable", "naive")}
+    _titles(fig, "Experiment 3 \u00b7 row locks track naive; serializable collapses",
+            f"Peak at {shortest} ms: atomic {peak['atomic']:.0f}, for_update "
+            f"{peak['for_update']:.0f}, naive {peak['naive']:.0f}, serializable "
+            f"{peak['serializable']:.0f} cycles/s. Median of reps, band = min\u2013max."
+            f"{_note(source)}")
     return _save(fig, out)
 
 
@@ -471,6 +473,19 @@ def exp3_retries(out="fig_exp3_retries.png"):
     return _save(fig, out)
 
 
+def exp3_giveups(out="fig_exp3_giveups.png"):
+    rows, source = _exp3_rows("exp3_cost_sweep")
+    if not rows:
+        return None
+    rows = [dict(r, gave_up_per_s=int(r["gave_up"]) / float(r["measure_s"])) for r in rows]
+    fig = _exp3_panels(_cells(rows, "gave_up_per_s"), "requests giving up, per second",
+                       log=False, strategies={"serializable"})
+    _titles(fig, "Experiment 3 \u00b7 serializable requests that exhaust their 10 retries",
+            "Each returns 503 and decides nothing. The other strategies never give up. "
+            f"Median of reps, band = min\u2013max.{_note(source)}")
+    return _save(fig, out)
+
+
 def exp3_denials(out="fig_exp3_denials.png"):
     rows, source = _exp3_rows("exp3_nearcap")
     if not rows:
@@ -480,6 +495,17 @@ def exp3_denials(out="fig_exp3_denials.png"):
     _titles(fig, "Experiment 3 \u00b7 near the cap, held budget becomes denials",
             "Each operation holds 1 of a cap of 10 and gives it back: at most 10 holds "
             f"fit.{_note(source)}")
+    return _save(fig, out)
+
+
+def exp3_nearcap_throughput(out="fig_exp3_nearcap_throughput.png"):
+    rows, source = _exp3_rows("exp3_nearcap")
+    if not rows:
+        return None
+    fig = _exp3_panels(_cells(rows, "completed_per_s"), "completed cycles per second (log)")
+    _titles(fig, "Experiment 3 \u00b7 at 1 s, the cap sets the throughput",
+            "At 1 s, 10 holds at once allow 10 cycles/s. Only naive exceeds that: more "
+            f"than 10 holds ran at once.{_note(source)}")
     return _save(fig, out)
 
 
@@ -509,5 +535,6 @@ def lock_waits(out="fig_lock_waits.png"):
 if __name__ == "__main__":
     for p in filter(None, [granted_distribution(), exp1_breach_rate(),
                           exp2_granted(), exp4_invariants(), exp3_throughput(),
-                          exp3_latency(), exp3_retries(), exp3_denials(), lock_waits()]):
+                          exp3_latency(), exp3_retries(), exp3_giveups(), exp3_denials(),
+                          exp3_nearcap_throughput(), lock_waits()]):
         print(f"wrote {p.relative_to(ROOT)}")

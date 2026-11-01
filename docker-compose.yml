@@ -49,6 +49,8 @@ services:
       # 1 unless Experiment 3 overrides it; each worker has its own pool, so
       # UVICORN_WORKERS x POOL_MAX_SIZE must stay under max_connections (300).
       UVICORN_WORKERS: "${UVICORN_WORKERS:-1}"
+      # name:key:role entries. Empty leaves RBAC off (see app/auth.py).
+      API_KEYS: "${API_KEYS:-}"
     ports:
       - "8000:8000"
     depends_on:

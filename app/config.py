@@ -25,6 +25,8 @@ class Settings:
     allow_admin: bool
     ledger_isolation: str
     uvicorn_workers: int
+    api_keys: str
+    audit_seal_interval_s: float
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,6 +56,10 @@ class Settings:
             .lower(),
             # Informational: uvicorn reads its own flag. 1 except in Experiment 3.
             uvicorn_workers=int(os.getenv("UVICORN_WORKERS", "1")),
+            # name:key:role entries; empty leaves RBAC off. See app/auth.py.
+            api_keys=os.getenv("API_KEYS", ""),
+            # How often finished audit rows are sealed into the hash chain.
+            audit_seal_interval_s=float(os.getenv("AUDIT_SEAL_INTERVAL_S", "1")),
         )
 
 

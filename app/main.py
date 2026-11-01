@@ -10,13 +10,13 @@ transaction open. See `run_job` below -- the adapter call sits between two
 awaits that each own their own transaction.
 """
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
-from decimal import Decimal
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from app.adapters import AdapterUnavailable, get_adapter, registry
@@ -26,6 +26,7 @@ from app.adapters import (  # noqa: F401  (registration)
     synthetic,
 )
 from app import faults
+from app.auth import Principal, require
 from app.config import settings
 from app.db import close_pool, get_pool, open_pool
 from app.enforcement import (  # noqa: F401  (registration)
@@ -37,7 +38,6 @@ from app.enforcement import (  # noqa: F401  (registration)
 )
 from app.enforcement.base import (
     ALL_STRATEGIES,
-    FULL_CYCLE_ONLY,
     IMPLEMENTED_STRATEGIES,
     DatasetNotFound,
     ReserveRequest,
@@ -45,7 +45,6 @@ from app.enforcement.base import (
     StrategyNotImplemented,
     get_strategy,
 )
-from app.enforcement.locked_1phase import run_locked_1phase
 from app.enforcement.settle import (
     OverCommit,
     ReservationNotFound,
@@ -73,6 +72,20 @@ from app.models import (
 # both before and after a restart, so a PID comparison silently proves nothing.
 INSTANCE_ID = str(uuid4())
 STARTED_AT = time.time()
+
+
+async def _seal_audit_log() -> None:
+    while True:
+        await asyncio.sleep(settings.audit_seal_interval_s)
+        try:
+            async with get_pool().connection() as conn:
+                # Explicit, because LEDGER_ISOLATION can change the pool's level
+                # and audit_seal() needs READ COMMITTED.
+                await conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+                await conn.execute("SELECT audit_seal()")
+        except Exception as exc:
+            # Rows stay captured and are sealed on a later pass.
+            print(f"!! audit seal failed: {exc}")
 
 
 @asynccontextmanager
@@ -116,7 +129,9 @@ async def lifespan(app: FastAPI):
             )
         print("!! this is expected after Experiment 1; reset with `make reset-db`.")
 
+    sealer = asyncio.create_task(_seal_audit_log())
     yield
+    sealer.cancel()
     await close_pool()
 
 
@@ -126,6 +141,10 @@ app = FastAPI(title="concur-ledger", version="0.1.0", lifespan=lifespan)
 def _admin_only() -> None:
     if not settings.allow_admin:
         raise HTTPException(403, "admin/test endpoints are disabled")
+
+
+def _actor(principal: Principal | None, claimed: str | None) -> str | None:
+    return principal.name if principal else claimed
 
 
 # --------------------------------------------------------------------------
@@ -140,7 +159,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/config")
+@app.get("/config", dependencies=[Depends(require("viewer"))])
 async def config():
     """What mode is this run in? Shown at the demo so the audience can see the
     CHECK constraint really is off during the breach."""
@@ -159,10 +178,10 @@ async def config():
         "pool_max_size": settings.pool_max_size,
         # Each worker is a process with its own pool of pool_max_size.
         "uvicorn_workers": settings.uvicorn_workers,
+        "rbac_enabled": bool(settings.api_keys.strip()),
         # Derived from the registry, not restated, so this cannot drift out of
         # step with what is actually registered.
         "implemented_strategies": list(IMPLEMENTED_STRATEGIES),
-        "full_cycle_only_strategies": list(FULL_CYCLE_ONLY),
         "phase_2_strategies": [
             s for s in ALL_STRATEGIES if s not in IMPLEMENTED_STRATEGIES
         ],
@@ -172,7 +191,7 @@ async def config():
     }
 
 
-@app.get("/adapters")
+@app.get("/adapters", dependencies=[Depends(require("viewer"))])
 async def adapters():
     out = []
     for name, ad in sorted(registry.items()):
@@ -183,7 +202,7 @@ async def adapters():
     return out
 
 
-@app.post("/adapters/epsilon")
+@app.post("/adapters/epsilon", dependencies=[Depends(require("viewer"))])
 async def adapter_epsilon(body: EpsilonQuery):
     """The deterministic cost of a spec, without running anything.
 
@@ -204,7 +223,7 @@ async def adapter_epsilon(body: EpsilonQuery):
 # --------------------------------------------------------------------------
 
 
-@app.post("/datasets", status_code=201)
+@app.post("/datasets", status_code=201, dependencies=[Depends(require("admin"))])
 async def create_dataset(body: CreateDataset):
     async with get_pool().connection() as conn:
         row = await q.create_dataset(
@@ -213,13 +232,13 @@ async def create_dataset(body: CreateDataset):
     return dataset_out(row)
 
 
-@app.get("/datasets")
+@app.get("/datasets", dependencies=[Depends(require("viewer"))])
 async def list_datasets():
     async with get_pool().connection() as conn:
         return [dataset_out(r) for r in await q.list_datasets(conn)]
 
 
-@app.get("/datasets/{dataset_id}")
+@app.get("/datasets/{dataset_id}", dependencies=[Depends(require("viewer"))])
 async def get_dataset(dataset_id: UUID):
     async with get_pool().connection() as conn:
         row = await q.get_dataset(conn, dataset_id)
@@ -228,7 +247,7 @@ async def get_dataset(dataset_id: UUID):
     return dataset_out(row)
 
 
-@app.post("/datasets/{dataset_id}/seed")
+@app.post("/datasets/{dataset_id}/seed", dependencies=[Depends(require("admin"))])
 async def seed_dataset(dataset_id: UUID, body: SeedDataset):
     _admin_only()
     async with get_pool().connection() as conn:
@@ -244,7 +263,7 @@ async def seed_dataset(dataset_id: UUID, body: SeedDataset):
     return dataset_out(row)
 
 
-@app.get("/datasets/{dataset_id}/invariants")
+@app.get("/datasets/{dataset_id}/invariants", dependencies=[Depends(require("viewer"))])
 async def invariants(dataset_id: UUID):
     async with get_pool().connection() as conn:
         inv = await q.check_invariants(conn, dataset_id)
@@ -256,14 +275,14 @@ async def invariants(dataset_id: UUID):
     return out
 
 
-@app.get("/datasets/{dataset_id}/records")
+@app.get("/datasets/{dataset_id}/records", dependencies=[Depends(require("viewer"))])
 async def records(dataset_id: UUID, limit: int = Query(500, ge=1, le=5000)):
     async with get_pool().connection() as conn:
         rows = await q.list_records(conn, dataset_id, limit)
     return [record_out(r) for r in rows]
 
 
-@app.post("/admin/db-constraint")
+@app.post("/admin/db-constraint", dependencies=[Depends(require("admin"))])
 async def db_constraint(body: ConstraintBody):
     """Add or drop the within_cap CHECK at runtime.
 
@@ -288,7 +307,11 @@ async def db_constraint(body: ConstraintBody):
 
 
 @app.post("/datasets/{dataset_id}/reserve")
-async def reserve(dataset_id: UUID, body: ReserveRequestBody):
+async def reserve(
+    dataset_id: UUID,
+    body: ReserveRequestBody,
+    principal: Principal | None = Depends(require("analyst")),
+):
     # Stamped before any database work, so the harness can show requests
     # arrived together even for strategies whose INSERTs are spread out by
     # queueing at the row lock.
@@ -300,7 +323,7 @@ async def reserve(dataset_id: UUID, body: ReserveRequestBody):
         epsilon_cost=body.epsilon_cost,
         strategy=body.strategy,
         epsilon_source=body.epsilon_source,
-        actor=body.actor,
+        actor=_actor(principal, body.actor),
     )
     try:
         strategy = get_strategy(body.strategy)
@@ -340,7 +363,7 @@ async def reserve(dataset_id: UUID, body: ReserveRequestBody):
     return JSONResponse(payload, status_code=429 if outcome.status == "denied" else 200)
 
 
-@app.post("/reservations/{reservation_id}/commit")
+@app.post("/reservations/{reservation_id}/commit", dependencies=[Depends(require("analyst"))])
 async def commit(reservation_id: UUID, body: CommitBody):
     try:
         out = await do_commit(get_pool(), reservation_id, body.actual_cost)
@@ -351,7 +374,7 @@ async def commit(reservation_id: UUID, body: CommitBody):
     return _settle_out(out)
 
 
-@app.post("/reservations/{reservation_id}/release")
+@app.post("/reservations/{reservation_id}/release", dependencies=[Depends(require("analyst"))])
 async def release(reservation_id: UUID):
     try:
         out = await do_release(get_pool(), reservation_id)
@@ -360,7 +383,7 @@ async def release(reservation_id: UUID):
     return _settle_out(out)
 
 
-@app.get("/reservations/{reservation_id}")
+@app.get("/reservations/{reservation_id}", dependencies=[Depends(require("viewer"))])
 async def get_reservation(reservation_id: UUID):
     async with get_pool().connection() as conn:
         row = await q.get_record(conn, reservation_id)
@@ -402,16 +425,16 @@ def _settle_out(out) -> dict:
 
 
 @app.post("/datasets/{dataset_id}/run")
-async def run_job(dataset_id: UUID, body: RunBody):
+async def run_job(
+    dataset_id: UUID,
+    body: RunBody,
+    principal: Principal | None = Depends(require("analyst")),
+):
     """reserve -> run_operation -> commit, exactly as plan section 7 specifies.
 
     Note what is NOT here: any `async with pool.connection()` wrapping the
     adapter call. Reserve opens and closes its own transaction; the operation
     runs with nothing held; commit opens a new one.
-
-    The one exception is `locked_1phase`, the rejected design kept as an
-    Experiment 3 comparator, which branches off before any of that and is
-    confined to app/enforcement/locked_1phase.py.
 
     Every response carries `timing_ms`, measured here on the server, so the
     harness can split its client-side latency into ledger time and overhead.
@@ -432,22 +455,20 @@ async def run_job(dataset_id: UUID, body: RunBody):
         epsilon_cost=cost,
         strategy=body.strategy,
         epsilon_source=body.adapter,
-        actor=body.actor,
+        actor=_actor(principal, body.actor),
     )
 
     if body.fault != "none":
         _admin_only()
-        if not faults.supported(
-            body.fault, body.strategy, two_phase=body.strategy not in FULL_CYCLE_ONLY
-        ):
+        # Injecting a crash stops the service, so analyst access is not enough.
+        if principal is not None and principal.role != "admin":
+            raise HTTPException(403, "fault injection needs role admin")
+        if not faults.supported(body.fault, body.strategy):
             raise HTTPException(
                 400, f"fault '{body.fault}' has no injection point on '{body.strategy}'"
             )
         # Request-scoped: other in-flight requests never see it.
         faults.active_fault.set(body.fault)
-
-    if body.strategy in FULL_CYCLE_ONLY:
-        return await _run_locked_1phase(req, adapter, body, cost, t_start)
 
     try:
         strategy = get_strategy(body.strategy)
@@ -518,48 +539,11 @@ async def run_job(dataset_id: UUID, body: RunBody):
     }
 
 
-async def _run_locked_1phase(
-    req: ReserveRequest, adapter, body: RunBody, cost: Decimal, t_start: float
-):
-    try:
-        out = await run_locked_1phase(get_pool(), req, adapter, body.spec)
-    except DatasetNotFound:
-        raise HTTPException(404, "dataset not found")
-    except Exception as exc:
-        # The transaction has already rolled back: no record, no charge, no hold.
-        raise HTTPException(500, f"operation failed, transaction rolled back: {exc}")
-
-    faults.point("crash_after_commit")
-    timing = dict(out.timing_ms or {})
-    timing["total"] = _ms_since(t_start)
-    payload = {
-        "reservation_id": str(out.record_id),
-        "status": out.status,
-        "epsilon_cost": float(cost),
-        "retries": 0,
-        "replayed": out.replayed,
-        "timing_ms": timing,
-    }
-    if out.status == "denied":
-        return JSONResponse(payload, status_code=429)
-    if out.result is not None:
-        payload.update(
-            {
-                "epsilon_committed": float(out.epsilon_committed),
-                "epsilon_source": out.result.source,
-                "result": out.result.result,
-                "detail": out.result.detail,
-                "dataset": dataset_out(out.dataset),
-            }
-        )
-    return payload
-
-
 def _ms_since(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 3)
 
 
-@app.post("/datasets/{dataset_id}/noop")
+@app.post("/datasets/{dataset_id}/noop", dependencies=[Depends(require("analyst"))])
 async def noop(dataset_id: UUID, body: RunBody):
     """The Experiment 3 ceiling: everything /run costs except the ledger.
 
@@ -573,7 +557,7 @@ async def noop(dataset_id: UUID, body: RunBody):
     return {}
 
 
-@app.post("/debug/reserve-and-abort/{dataset_id}")
+@app.post("/debug/reserve-and-abort/{dataset_id}", dependencies=[Depends(require("admin"))])
 async def reserve_and_abort(dataset_id: UUID, body: ReserveRequestBody):
     """Reserve, then deliberately fail before commit WITHOUT releasing.
 

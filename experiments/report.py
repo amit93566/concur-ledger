@@ -363,12 +363,17 @@ def exp3_section():
     for r in rows:
         k = (r["strategy"], r["duration_ms"], r["n"])
         timeouts[k] = timeouts.get(k, 0) + r["timeouts"]
-    strategies = ["atomic", "for_update", "serializable", "locked_1phase", "naive"]
+    strategies = ["atomic", "for_update", "serializable", "naive"]
     longest, shortest = max(r["duration_ms"] for r in rows), min(r["duration_ms"] for r in rows)
     top = max(r["n"] for r in rows)
-    hold = [all(r[k] for k in ("i1_cap_safety", "i2_ledger_agreement")) for r in rows
+    near = read("exp3_nearcap.csv")
+    every = rows + near
+    hold = [all(r[k] for k in ("i1_cap_safety", "i2_ledger_agreement")) for r in every
             if r["strategy"] != "naive"]
-    deadlocks = sum(r["deadlocks"] for r in rows)
+    deadlocks = sum(r["deadlocks"] for r in every)
+    errors = sum(r["errors"] for r in every)
+    peak = {s: max(v for k, v in done.items() if k[0] == s and k[1] == shortest)
+            for s in strategies if any(k[0] == s for k in done)}
     body = []
     for d in (shortest, longest):
         ns = sorted({k[2] for k in done if k[1] == d})
@@ -390,11 +395,16 @@ def exp3_section():
            for s in strategies if (s, longest, top) in p99]
     body.append(f"<h3>p99 latency at N={top}, {longest} ms operation (ms)</h3>")
     body.append(table(["strategy", "p99 ms"], lat))
+    body.append(_exp3_serializable(rows))
+    if near:
+        body.append(_exp3_nearcap(near))
     body.append(
         '<p class="foot">* client timeouts in that cell: latency is censored, a lower '
         "bound. At short operations every strategy, naive included, is limited by the "
         "single dataset row: each reserve and commit updates it and holds its lock "
-        "until the commit is on disk. Four uvicorn workers did not raise this.</p>"
+        "until the commit is on disk. Four uvicorn workers did not raise this. "
+        f"{errors} requests failed with a dropped connection across {len(every)} cells; "
+        "the cause is not established, and no invariant was affected.</p>"
     )
     return exp(
         "3" + (" (pilot, 1 rep)" if pilot else ""),
@@ -402,11 +412,59 @@ def exp3_section():
         "Two-phase reserve/commit is more code than holding one lock. What does safety "
         "cost, and what does the two-phase design buy?",
         f"Every safe strategy held I1 and I2 in {sum(hold)}/{len(hold)} cells, with "
-        f"{deadlocks} deadlocks. Holding the lock across a {longest} ms operation "
-        "pins throughput to about one cycle per operation time whatever N is, while "
-        "the two-phase strategies scale with N.",
+        f"{deadlocks} deadlocks. At {shortest} ms, atomic and for_update peak at "
+        f"{peak['atomic']:.0f} and {peak['for_update']:.0f} cycles/s against naive's "
+        f"{peak['naive']:.0f}, so their safety costs nothing above run-to-run noise. "
+        f"serializable peaks at {peak['serializable']:.0f} and collapses at high N, "
+        "where requests exhaust their retries and give up.",
         "Result",
         "".join(body),
+    )
+
+
+def _spread(rows, key, strategy, d, n, scale=1.0):
+    vals = sorted(r[key] / scale for r in rows
+                  if (r["strategy"], r["duration_ms"], r["n"]) == (strategy, d, n))
+    return f"{vals[len(vals) // 2]:.0f} ({vals[0]:.0f}\u2013{vals[-1]:.0f})"
+
+
+def _exp3_serializable(rows):
+    ns = sorted({r["n"] for r in rows if r["n"] >= 16})
+    trows = []
+    for d in sorted({r["duration_ms"] for r in rows}):
+        trows.append([f"{d} ms completed/s",
+                      *[_spread(rows, "completed_per_s", "serializable", d, n) for n in ns]])
+        trows.append([f"{d} ms gave up/s",
+                      *[_spread(rows, "gave_up", "serializable", d, n, rows[0]["measure_s"])
+                        for n in ns]])
+    return (
+        "<h3>serializable under contention: median (min\u2013max) of reps</h3>"
+        + table(["", *[f"N={n}" for n in ns]], trows)
+        + '<p class="foot">Repetitions at high N split into a slow and a fast group, '
+        "so read the range, not the median. A rise from one N to the next is not "
+        "recovery.</p>"
+    )
+
+
+def _exp3_nearcap(rows):
+    longest = max(r["duration_ms"] for r in rows)
+    done = _median_cells(rows, "completed_per_s")
+    rate = _median_cells(rows, "denial_rate")
+    ns = sorted({r["n"] for r in rows})
+    strategies = ["atomic", "for_update", "serializable", "naive"]
+    trows = [[s + (" (unsafe)" if s == "naive" else ""),
+              *[f"{done[(s, longest, n)]:.1f}" for n in ns]] for s in strategies]
+    drows = [[s + (" (unsafe)" if s == "naive" else ""),
+              *[f"{rate[(s, longest, n)]:.0%}" for n in ns]] for s in strategies]
+    return (
+        f"<h3>Near the cap: completed cycles/s, {longest} ms operation</h3>"
+        + table(["strategy", *[f"N={n}" for n in ns]], trows)
+        + f"<h3>Near the cap: share of decisions denied, {longest} ms operation</h3>"
+        + table(["strategy", *[f"N={n}" for n in ns]], drows)
+        + '<p class="foot">Cap 10, each operation holds 1 and gives it back, so 10 holds '
+        "at once allow 10 cycles/s at 1 s. naive above 10/s means more than 10 holds "
+        "ran at once. The end-of-cell invariants cannot show that, because the actual "
+        "cost is 0 and the ledger ends empty.</p>"
     )
 
 

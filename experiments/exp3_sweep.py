@@ -6,17 +6,16 @@ sustained throughput and latency: N workers each loop POST /run back to back
 
 Design choices that the method section has to state, so they are stated here:
 
-  * It drives /run, the full reserve -> operation -> commit cycle. That is the
-    only way `locked_1phase` (the one-transaction comparator) can be priced, and
-    every strategy goes through the same endpoint so the comparison is fair.
+  * It drives /run, the full reserve -> operation -> commit cycle, and every
+    strategy goes through the same endpoint so the comparison is fair.
   * The operation is the `synthetic` adapter: a known sleep, a fixed epsilon.
     Duration is a factor (10 ms, 1 s); the mechanism is not what is measured.
   * Warm-up is discarded. Throughput counts completions that END inside the
     measured window; latency uses requests that START inside it, including those
     that finish after it, so slow requests are not dropped from the tail.
-  * A client timeout is counted as a timeout, never silently dropped. For
-    `locked_1phase` at 1 s the queue can exceed the timeout; its latency is then
-    censored at the timeout and the CSV says how many were.
+  * A client timeout is counted as a timeout, never silently dropped. If a
+    queue exceeds the timeout, latency is censored there and the CSV says how
+    many were.
   * A timeout abandons the request, not the work: the server still finishes it.
     So after each cell the driver waits until Postgres has no busy sessions
     (`quiesce_s`) before reading the invariants, and the next cell starts on an
@@ -49,7 +48,7 @@ Regimes:
                    from headroom held by in-flight operations.
 
 Usage:
-    python experiments/exp3_sweep.py --strategies atomic,locked_1phase \\
+    python experiments/exp3_sweep.py --strategies atomic,serializable \\
         --ns 1,8,64 --durations 10,1000 --reps 1 --out results/exp3_pilot.csv
 """
 
@@ -105,7 +104,7 @@ FIELDS = KEY + [
     "lat_p95_ms",
     "lat_p99_ms",
     "lat_max_ms",
-    # server-side, from timing_ms: the reserve step (lock_wait for locked_1phase)
+    # server-side, from timing_ms: the reserve step
     "srv_reserve_p50_ms",
     "srv_reserve_p99_ms",
     "srv_total_p50_ms",
@@ -165,8 +164,7 @@ def _cpu_usec(service: str) -> int:
 
 
 def _busy_backends() -> int:
-    # Sessions doing anything at all, including `idle in transaction` -- which is
-    # what a locked_1phase request looks like while its operation runs.
+    # Sessions doing anything at all, including `idle in transaction`.
     return int(_psql(
         "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
         "AND backend_type = 'client backend' AND state <> 'idle' "
@@ -327,8 +325,7 @@ async def run_cell(client, args, cell, cfg, constraint_present):
     completed = [s for s in ended_in if s["outcome"] == "completed"]
     denied = [s for s in ended_in if s["outcome"] == "denied"]
     lat = [s["latency_ms"] for s in started_in if s["outcome"] == "completed"]
-    reserve_key = "lock_wait" if strategy == "locked_1phase" else "reserve"
-    srv_reserve = [s["timing"][reserve_key] for s in started_in if reserve_key in s["timing"]]
+    srv_reserve = [s["timing"]["reserve"] for s in started_in if "reserve" in s["timing"]]
     srv_total = [s["timing"]["total"] for s in started_in if "total" in s["timing"]]
     retries = sum(s["retries"] for s in started_in)
     successes = sum(1 for s in started_in if s["outcome"] == "completed")
@@ -561,7 +558,7 @@ def parse_args():
     p.add_argument("--base-url", default="http://localhost:8000")
     p.add_argument("--endpoint", choices=["run", "noop"], default="run")
     p.add_argument(
-        "--strategies", default="naive,atomic,for_update,serializable,locked_1phase",
+        "--strategies", default="naive,atomic,for_update,serializable",
         type=lambda s: s.split(","),
     )
     p.add_argument("--ns", default="1,2,4,8,16,32,64,100", type=_ints)

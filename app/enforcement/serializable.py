@@ -27,6 +27,7 @@ import random
 from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
+from app import faults
 from app.enforcement.base import (
     RECORD_INSERT,
     DatasetNotFound,
@@ -98,6 +99,7 @@ async def reserve_serializable(
                         ),
                     )
                     rid = (await cur.fetchone())["id"]
+                    faults.point("crash_in_reserve_txn")
                 except errors.UniqueViolation:
                     await conn.rollback()
                     rid = None
