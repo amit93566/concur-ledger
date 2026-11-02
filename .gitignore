@@ -8,3 +8,5 @@ results/
 results/report.html
 results/summary.html
 bundle-for-chat.md
+dashboard/node_modules
+dashboard/dist

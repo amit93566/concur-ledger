@@ -14,10 +14,12 @@ import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.adapters import AdapterUnavailable, get_adapter, registry
 from app.adapters import (  # noqa: F401  (registration)
@@ -51,13 +53,14 @@ from app.enforcement.settle import (
     commit as do_commit,
     release as do_release,
 )
-from app.ledger import queries as q
+from app.ledger import audit, queries as q
 from app.ledger.init_db import apply_schema, constraint_enabled, set_constraint
 from app.models import (
     CommitBody,
     ConstraintBody,
     CreateDataset,
     EpsilonQuery,
+    HoldAction,
     ReserveRequestBody,
     RunBody,
     SeedDataset,
@@ -79,10 +82,7 @@ async def _seal_audit_log() -> None:
         await asyncio.sleep(settings.audit_seal_interval_s)
         try:
             async with get_pool().connection() as conn:
-                # Explicit, because LEDGER_ISOLATION can change the pool's level
-                # and audit_seal() needs READ COMMITTED.
-                await conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-                await conn.execute("SELECT audit_seal()")
+                await audit.seal(conn)
         except Exception as exc:
             # Rows stay captured and are sealed on a later pass.
             print(f"!! audit seal failed: {exc}")
@@ -191,6 +191,16 @@ async def config():
     }
 
 
+@app.get("/whoami")
+async def whoami(principal: Principal | None = Depends(require("viewer"))):
+    # With RBAC off there is no caller to name, and every action is open.
+    return {
+        "rbac_enabled": principal is not None,
+        "name": principal.name if principal else None,
+        "role": principal.role if principal else "admin",
+    }
+
+
 @app.get("/adapters", dependencies=[Depends(require("viewer"))])
 async def adapters():
     out = []
@@ -279,6 +289,13 @@ async def invariants(dataset_id: UUID):
 async def records(dataset_id: UUID, limit: int = Query(500, ge=1, le=5000)):
     async with get_pool().connection() as conn:
         rows = await q.list_records(conn, dataset_id, limit)
+    return [record_out(r) for r in rows]
+
+
+@app.get("/datasets/{dataset_id}/activity", dependencies=[Depends(require("viewer"))])
+async def activity(dataset_id: UUID, limit: int = Query(30, ge=1, le=200)):
+    async with get_pool().connection() as conn:
+        rows = await q.recent_records(conn, dataset_id, limit)
     return [record_out(r) for r in rows]
 
 
@@ -539,6 +556,76 @@ async def run_job(
     }
 
 
+# --------------------------------------------------------------------------
+# governance: audit view and stale holds. None of this is on the reserve path.
+# --------------------------------------------------------------------------
+
+
+@app.get("/audit", dependencies=[Depends(require("viewer"))])
+async def audit_rows(limit: int = Query(100, ge=1, le=500)):
+    async with get_pool().connection() as conn:
+        rows = await audit.recent(conn, limit)
+    return [
+        {**r, "at": r["at"].isoformat(), "record_id": str(r["record_id"])} for r in rows
+    ]
+
+
+@app.post("/audit/verify", dependencies=[Depends(require("analyst"))])
+async def audit_verify():
+    return await audit.verify(get_pool())
+
+
+@app.get("/holds", dependencies=[Depends(require("viewer"))])
+async def holds(
+    older_than_s: float = Query(300, ge=0), limit: int = Query(200, ge=1, le=500)
+):
+    async with get_pool().connection() as conn:
+        total, rows = await audit.stale_holds(conn, older_than_s, limit)
+    return {
+        "total": total,
+        "holds": [
+            {
+                "id": str(r["id"]),
+                "dataset_id": str(r["dataset_id"]),
+                "dataset_name": r["dataset_name"],
+                "job_id": r["job_id"],
+                "epsilon": float(r["epsilon_reserved"]),
+                "strategy": r["strategy"],
+                "actor": r["actor"],
+                "reserved_at": r["reserved_at"].isoformat(),
+                "age_s": float(r["age_s"]),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.post("/holds/{reservation_id}/resolve")
+async def resolve_hold(
+    reservation_id: UUID,
+    body: HoldAction,
+    principal: Principal | None = Depends(require("admin")),
+):
+    """Settle a stale hold. `charge` commits the full held amount, the specified
+    policy when an operation's outcome is unknown; `release` returns it."""
+    async with get_pool().connection() as conn:
+        row = await q.get_record(conn, reservation_id)
+        if row is None:
+            raise HTTPException(404, "reservation not found")
+        if row["status"] != "reserved":
+            raise HTTPException(409, f"reservation is already {row['status']}")
+        await conn.execute(
+            "UPDATE spend_records SET resolved_by = %s "
+            "WHERE id = %s AND status = 'reserved'",
+            (principal.name if principal else "rbac-off", reservation_id),
+        )
+    if body.action == "release":
+        out = await do_release(get_pool(), reservation_id)
+    else:
+        out = await do_commit(get_pool(), reservation_id, row["epsilon_reserved"])
+    return _settle_out(out)
+
+
 def _ms_since(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 3)
 
@@ -557,8 +644,12 @@ async def noop(dataset_id: UUID, body: RunBody):
     return {}
 
 
-@app.post("/debug/reserve-and-abort/{dataset_id}", dependencies=[Depends(require("admin"))])
-async def reserve_and_abort(dataset_id: UUID, body: ReserveRequestBody):
+@app.post("/debug/reserve-and-abort/{dataset_id}")
+async def reserve_and_abort(
+    dataset_id: UUID,
+    body: ReserveRequestBody,
+    principal: Principal | None = Depends(require("admin")),
+):
     """Reserve, then deliberately fail before commit WITHOUT releasing.
 
     This is the controlled-abort fault of plan section 8: it leaves the
@@ -574,7 +665,7 @@ async def reserve_and_abort(dataset_id: UUID, body: ReserveRequestBody):
         epsilon_cost=body.epsilon_cost,
         strategy=body.strategy,
         epsilon_source=body.epsilon_source,
-        actor=body.actor,
+        actor=_actor(principal, body.actor),
     )
     try:
         strategy = get_strategy(body.strategy)
@@ -599,3 +690,9 @@ async def reserve_and_abort(dataset_id: UUID, body: ReserveRequestBody):
         },
         status_code=200,
     )
+
+
+# Last, so no API route can be shadowed. Built into the image by the Dockerfile.
+DASHBOARD = Path(__file__).resolve().parents[1] / "dashboard" / "dist"
+if DASHBOARD.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=DASHBOARD, html=True), name="dashboard")

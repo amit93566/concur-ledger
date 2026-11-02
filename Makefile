@@ -1,7 +1,7 @@
 .PHONY: help up down reset-db app app-stop app-logs psql health smoke \
         exp1 exp1b exp1c exp2 exp2-safe exp3 exp3-pilot exp3-noop exp3-nearcap exp4 exp4-ext exp1c-n50 pin unpin \
         eps-table exp-eps-scale exp-eps-round exp-isolation exp-lock-waits demo-locks exp4-kill opendp exp-opendp mid-demo watch clean \
-        demo-breach demo-txn demo-safe demo-crash report run-report summary bundle figures docs
+        demo-breach demo-txn demo-safe demo-crash dashboard report run-report summary bundle figures docs
 
 BASE ?= http://localhost:8000
 PY   ?= .venv/bin/python
@@ -216,6 +216,15 @@ demo-rbac:     ## DEMO -- viewer gets 403 on reserve; actor comes from the key
 	API_KEYS='$(DEMO_KEYS)' docker compose up -d app >/dev/null 2>&1 || exit 1; \
 	for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done; \
 	$(PY) experiments/demo_rbac.py
+
+# Leaves RBAC on, which the harnesses cannot use, so it says how to turn it off.
+dashboard:     ## DEMO -- console with the demo keys at $(BASE)/dashboard/
+	$(PY) experiments/dashboard_results.py
+	docker buildx build -q --allow network.host --network host -t concur-ledger-app --load .
+	API_KEYS='$(DEMO_KEYS)' docker compose up -d app
+	@for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done
+	@echo "open $(BASE)/dashboard/ with demo-admin-key, demo-analyst-key or demo-viewer-key"
+	@echo "before any experiment, turn RBAC back off: docker compose up -d app"
 
 # Crash points INSIDE and AFTER the transactions (app/faults.py). Needs the
 # default single uvicorn worker. One CSV per mode, same check-row format as exp4.

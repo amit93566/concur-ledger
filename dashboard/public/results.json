@@ -1,0 +1,1296 @@
+{
+ "calibration": {
+  "epochs": 15,
+  "reps": 3,
+  "train_s_median": 212.61,
+  "train_s_min": 206.81,
+  "train_s_max": 234.59,
+  "epoch_s_median": 14.09,
+  "epsilon": 0.922,
+  "delta": 1e-05,
+  "accuracy_median": 0.9479,
+  "opacus": "1.6.0"
+ },
+ "panels": [
+  {
+   "title": "10 ms operation",
+   "regime": "unconstrained",
+   "duration_ms": 10,
+   "source": "final sweep",
+   "series": {
+    "atomic": [
+     {
+      "n": 1,
+      "median": 46.93,
+      "min": 41.998,
+      "max": 54.6,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 28.8
+     },
+     {
+      "n": 2,
+      "median": 85.43,
+      "min": 70.565,
+      "max": 88.964,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 33.8
+     },
+     {
+      "n": 4,
+      "median": 151.16,
+      "min": 146.232,
+      "max": 154.134,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 38.0
+     },
+     {
+      "n": 8,
+      "median": 161.53,
+      "min": 144.403,
+      "max": 165.469,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 98.0
+     },
+     {
+      "n": 16,
+      "median": 150.53,
+      "min": 125.434,
+      "max": 153.101,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 315.7
+     },
+     {
+      "n": 32,
+      "median": 133.78,
+      "min": 117.13,
+      "max": 144.131,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 834.4
+     },
+     {
+      "n": 64,
+      "median": 128.9,
+      "min": 97.509,
+      "max": 142.834,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1750.5
+     },
+     {
+      "n": 100,
+      "median": 111.35,
+      "min": 95.867,
+      "max": 142.809,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 3830.9
+     }
+    ],
+    "for_update": [
+     {
+      "n": 1,
+      "median": 45.0,
+      "min": 41.2,
+      "max": 48.269,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 29.0
+     },
+     {
+      "n": 2,
+      "median": 84.63,
+      "min": 81.936,
+      "max": 87.835,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 35.3
+     },
+     {
+      "n": 4,
+      "median": 144.53,
+      "min": 143.397,
+      "max": 148.004,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 40.3
+     },
+     {
+      "n": 8,
+      "median": 152.24,
+      "min": 136.132,
+      "max": 156.333,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 103.4
+     },
+     {
+      "n": 16,
+      "median": 148.6,
+      "min": 139.063,
+      "max": 155.473,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 361.3
+     },
+     {
+      "n": 32,
+      "median": 132.54,
+      "min": 96.259,
+      "max": 138.134,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 922.8
+     },
+     {
+      "n": 64,
+      "median": 128.41,
+      "min": 109.267,
+      "max": 130.268,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1898.0
+     },
+     {
+      "n": 100,
+      "median": 113.73,
+      "min": 110.862,
+      "max": 131.666,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 3018.9
+     }
+    ],
+    "serializable": [
+     {
+      "n": 1,
+      "median": 44.73,
+      "min": 42.068,
+      "max": 46.833,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 30.5
+     },
+     {
+      "n": 2,
+      "median": 77.36,
+      "min": 75.401,
+      "max": 80.436,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 37.7
+     },
+     {
+      "n": 4,
+      "median": 100.73,
+      "min": 94.664,
+      "max": 103.331,
+      "reps": 5,
+      "gave_up_per_s": 0.2,
+      "denial_rate": 0.0,
+      "p99_ms": 172.6
+     },
+     {
+      "n": 8,
+      "median": 99.38,
+      "min": 96.666,
+      "max": 102.369,
+      "reps": 5,
+      "gave_up_per_s": 4.9,
+      "denial_rate": 0.0,
+      "p99_ms": 284.3
+     },
+     {
+      "n": 16,
+      "median": 76.97,
+      "min": 74.733,
+      "max": 83.236,
+      "reps": 5,
+      "gave_up_per_s": 22.27,
+      "denial_rate": 0.0,
+      "p99_ms": 348.2
+     },
+     {
+      "n": 32,
+      "median": 39.57,
+      "min": 37.033,
+      "max": 41.066,
+      "reps": 5,
+      "gave_up_per_s": 43.4,
+      "denial_rate": 0.0,
+      "p99_ms": 592.1
+     },
+     {
+      "n": 64,
+      "median": 16.73,
+      "min": 15.1,
+      "max": 19.766,
+      "reps": 5,
+      "gave_up_per_s": 57.34,
+      "denial_rate": 0.0,
+      "p99_ms": 1134.3
+     },
+     {
+      "n": 100,
+      "median": 34.57,
+      "min": 9.601,
+      "max": 60.304,
+      "reps": 5,
+      "gave_up_per_s": 35.87,
+      "denial_rate": 0.0,
+      "p99_ms": 2357.3
+     }
+    ],
+    "naive": [
+     {
+      "n": 1,
+      "median": 42.77,
+      "min": 41.566,
+      "max": 44.632,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 34.7
+     },
+     {
+      "n": 2,
+      "median": 82.2,
+      "min": 80.6,
+      "max": 87.568,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 35.9
+     },
+     {
+      "n": 4,
+      "median": 133.28,
+      "min": 127.802,
+      "max": 136.766,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 43.1
+     },
+     {
+      "n": 8,
+      "median": 160.87,
+      "min": 148.737,
+      "max": 165.067,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 96.5
+     },
+     {
+      "n": 16,
+      "median": 150.13,
+      "min": 139.728,
+      "max": 154.542,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 304.7
+     },
+     {
+      "n": 32,
+      "median": 135.51,
+      "min": 130.633,
+      "max": 138.431,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 795.0
+     },
+     {
+      "n": 64,
+      "median": 127.3,
+      "min": 117.136,
+      "max": 136.661,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1950.2
+     },
+     {
+      "n": 100,
+      "median": 107.3,
+      "min": 97.891,
+      "max": 136.673,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 3124.5
+     }
+    ]
+   }
+  },
+  {
+   "title": "1 s operation",
+   "regime": "unconstrained",
+   "duration_ms": 1000,
+   "source": "final sweep",
+   "series": {
+    "atomic": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1024.5
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 1.933,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1028.4
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 3.9,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1034.8
+     },
+     {
+      "n": 8,
+      "median": 8.0,
+      "min": 7.767,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1056.4
+     },
+     {
+      "n": 16,
+      "median": 16.0,
+      "min": 15.634,
+      "max": 16.001,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1039.5
+     },
+     {
+      "n": 32,
+      "median": 31.1,
+      "min": 30.935,
+      "max": 32.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1102.2
+     },
+     {
+      "n": 64,
+      "median": 61.87,
+      "min": 61.766,
+      "max": 63.17,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1106.7
+     },
+     {
+      "n": 100,
+      "median": 96.97,
+      "min": 96.305,
+      "max": 98.568,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1116.5
+     }
+    ],
+    "for_update": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 0.967,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1036.4
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 2.0,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1025.9
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 3.867,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1041.9
+     },
+     {
+      "n": 8,
+      "median": 7.93,
+      "min": 7.767,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1060.7
+     },
+     {
+      "n": 16,
+      "median": 15.63,
+      "min": 15.6,
+      "max": 16.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1050.6
+     },
+     {
+      "n": 32,
+      "median": 31.87,
+      "min": 31.0,
+      "max": 32.002,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1063.8
+     },
+     {
+      "n": 64,
+      "median": 62.67,
+      "min": 62.099,
+      "max": 62.9,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1068.8
+     },
+     {
+      "n": 100,
+      "median": 96.17,
+      "min": 83.6,
+      "max": 96.896,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1176.2
+     }
+    ],
+    "serializable": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1027.5
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 1.933,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1041.0
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 3.867,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1054.7
+     },
+     {
+      "n": 8,
+      "median": 7.83,
+      "min": 7.6,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1060.5
+     },
+     {
+      "n": 16,
+      "median": 15.53,
+      "min": 15.3,
+      "max": 16.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1118.5
+     },
+     {
+      "n": 32,
+      "median": 31.17,
+      "min": 29.632,
+      "max": 31.367,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1115.1
+     },
+     {
+      "n": 64,
+      "median": 44.2,
+      "min": 41.098,
+      "max": 62.066,
+      "reps": 5,
+      "gave_up_per_s": 17.43,
+      "denial_rate": 0.0,
+      "p99_ms": 1755.9
+     },
+     {
+      "n": 100,
+      "median": 12.9,
+      "min": 11.772,
+      "max": 19.016,
+      "reps": 5,
+      "gave_up_per_s": 53.72,
+      "denial_rate": 0.0,
+      "p99_ms": 2624.9
+     }
+    ],
+    "naive": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1032.4
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 2.0,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1027.9
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 3.9,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1036.3
+     },
+     {
+      "n": 8,
+      "median": 8.0,
+      "min": 7.467,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1039.6
+     },
+     {
+      "n": 16,
+      "median": 16.0,
+      "min": 15.467,
+      "max": 16.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1069.7
+     },
+     {
+      "n": 32,
+      "median": 31.57,
+      "min": 30.934,
+      "max": 32.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1065.2
+     },
+     {
+      "n": 64,
+      "median": 62.67,
+      "min": 61.867,
+      "max": 62.868,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1071.4
+     },
+     {
+      "n": 100,
+      "median": 96.3,
+      "min": 93.901,
+      "max": 98.133,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1160.3
+     }
+    ]
+   }
+  },
+  {
+   "title": "14 s operation: one real DP-SGD epoch",
+   "regime": "unconstrained",
+   "duration_ms": 14000,
+   "source": "calibrated sweep, audit log on",
+   "series": {
+    "atomic": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14037.9
+     },
+     {
+      "n": 32,
+      "median": 2.29,
+      "min": 2.286,
+      "max": 2.286,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14029.3
+     },
+     {
+      "n": 100,
+      "median": 7.14,
+      "min": 7.143,
+      "max": 7.143,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14247.2
+     }
+    ],
+    "for_update": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14036.2
+     },
+     {
+      "n": 32,
+      "median": 2.29,
+      "min": 2.286,
+      "max": 2.286,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14034.0
+     },
+     {
+      "n": 100,
+      "median": 7.14,
+      "min": 7.143,
+      "max": 7.143,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14081.8
+     }
+    ],
+    "serializable": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14054.9
+     },
+     {
+      "n": 32,
+      "median": 2.29,
+      "min": 2.286,
+      "max": 2.286,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14073.4
+     },
+     {
+      "n": 100,
+      "median": 7.14,
+      "min": 7.143,
+      "max": 7.143,
+      "reps": 3,
+      "gave_up_per_s": 0.04,
+      "denial_rate": 0.0,
+      "p99_ms": 14323.7
+     }
+    ],
+    "naive": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14051.9
+     },
+     {
+      "n": 32,
+      "median": 2.29,
+      "min": 2.286,
+      "max": 2.286,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14059.8
+     },
+     {
+      "n": 100,
+      "median": 7.14,
+      "min": 7.143,
+      "max": 7.143,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14025.9
+     }
+    ]
+   }
+  },
+  {
+   "title": "1 s operation, near the cap",
+   "regime": "near_cap",
+   "duration_ms": 1000,
+   "source": "final sweep",
+   "series": {
+    "atomic": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1023.0
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 2.0,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1026.0
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 4.0,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1030.2
+     },
+     {
+      "n": 8,
+      "median": 8.0,
+      "min": 8.0,
+      "max": 8.001,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1041.8
+     },
+     {
+      "n": 16,
+      "median": 9.83,
+      "min": 9.734,
+      "max": 10.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.962,
+      "p99_ms": 1089.6
+     },
+     {
+      "n": 32,
+      "median": 10.0,
+      "min": 9.803,
+      "max": 10.003,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.946,
+      "p99_ms": 1602.6
+     },
+     {
+      "n": 64,
+      "median": 9.9,
+      "min": 9.841,
+      "max": 10.009,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.946,
+      "p99_ms": 2212.9
+     },
+     {
+      "n": 100,
+      "median": 9.8,
+      "min": 9.706,
+      "max": 10.008,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.941,
+      "p99_ms": 3223.2
+     }
+    ],
+    "for_update": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1024.4
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 2.0,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1026.3
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 4.0,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1034.4
+     },
+     {
+      "n": 8,
+      "median": 8.0,
+      "min": 8.0,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1040.2
+     },
+     {
+      "n": 16,
+      "median": 9.77,
+      "min": 9.666,
+      "max": 9.834,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.962,
+      "p99_ms": 1087.5
+     },
+     {
+      "n": 32,
+      "median": 9.37,
+      "min": 8.867,
+      "max": 9.598,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.956,
+      "p99_ms": 1535.9
+     },
+     {
+      "n": 64,
+      "median": 9.87,
+      "min": 9.837,
+      "max": 10.004,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.948,
+      "p99_ms": 2556.3
+     },
+     {
+      "n": 100,
+      "median": 10.0,
+      "min": 9.674,
+      "max": 10.005,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.948,
+      "p99_ms": 3273.2
+     }
+    ],
+    "serializable": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1023.8
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 2.0,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1028.9
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 4.0,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1050.0
+     },
+     {
+      "n": 8,
+      "median": 8.0,
+      "min": 8.0,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1065.1
+     },
+     {
+      "n": 16,
+      "median": 9.77,
+      "min": 9.667,
+      "max": 9.834,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.962,
+      "p99_ms": 1094.4
+     },
+     {
+      "n": 32,
+      "median": 9.87,
+      "min": 9.767,
+      "max": 10.001,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.938,
+      "p99_ms": 1812.6
+     },
+     {
+      "n": 64,
+      "median": 9.8,
+      "min": 9.701,
+      "max": 9.868,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.933,
+      "p99_ms": 2645.2
+     },
+     {
+      "n": 100,
+      "median": 9.84,
+      "min": 9.74,
+      "max": 9.94,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.939,
+      "p99_ms": 3379.0
+     }
+    ],
+    "naive": [
+     {
+      "n": 1,
+      "median": 1.0,
+      "min": 1.0,
+      "max": 1.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1026.4
+     },
+     {
+      "n": 2,
+      "median": 2.0,
+      "min": 2.0,
+      "max": 2.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1030.4
+     },
+     {
+      "n": 4,
+      "median": 4.0,
+      "min": 4.0,
+      "max": 4.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1032.9
+     },
+     {
+      "n": 8,
+      "median": 8.0,
+      "min": 8.0,
+      "max": 8.0,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 1039.8
+     },
+     {
+      "n": 16,
+      "median": 12.7,
+      "min": 12.568,
+      "max": 13.2,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.926,
+      "p99_ms": 1173.5
+     },
+     {
+      "n": 32,
+      "median": 11.23,
+      "min": 10.97,
+      "max": 12.366,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.94,
+      "p99_ms": 1656.1
+     },
+     {
+      "n": 64,
+      "median": 10.83,
+      "min": 10.536,
+      "max": 11.076,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.937,
+      "p99_ms": 2404.2
+     },
+     {
+      "n": 100,
+      "median": 10.54,
+      "min": 10.307,
+      "max": 10.637,
+      "reps": 5,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.931,
+      "p99_ms": 3509.0
+     }
+    ]
+   }
+  },
+  {
+   "title": "14 s operation, near the cap",
+   "regime": "near_cap",
+   "duration_ms": 14000,
+   "source": "calibrated sweep, audit log on",
+   "series": {
+    "atomic": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14059.0
+     },
+     {
+      "n": 32,
+      "median": 0.71,
+      "min": 0.714,
+      "max": 0.714,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.997,
+      "p99_ms": 14474.0
+     },
+     {
+      "n": 100,
+      "median": 0.71,
+      "min": 0.714,
+      "max": 0.714,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.997,
+      "p99_ms": 15931.6
+     }
+    ],
+    "for_update": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14031.5
+     },
+     {
+      "n": 32,
+      "median": 0.71,
+      "min": 0.714,
+      "max": 0.714,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.997,
+      "p99_ms": 14600.2
+     },
+     {
+      "n": 100,
+      "median": 0.71,
+      "min": 0.714,
+      "max": 0.714,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.997,
+      "p99_ms": 15605.5
+     }
+    ],
+    "serializable": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14072.2
+     },
+     {
+      "n": 32,
+      "median": 0.71,
+      "min": 0.714,
+      "max": 0.714,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.997,
+      "p99_ms": 14530.5
+     },
+     {
+      "n": 100,
+      "median": 0.71,
+      "min": 0.714,
+      "max": 0.714,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.997,
+      "p99_ms": 15931.0
+     }
+    ],
+    "naive": [
+     {
+      "n": 8,
+      "median": 0.57,
+      "min": 0.571,
+      "max": 0.571,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.0,
+      "p99_ms": 14039.7
+     },
+     {
+      "n": 32,
+      "median": 1.37,
+      "min": 1.012,
+      "max": 1.595,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.994,
+      "p99_ms": 14404.2
+     },
+     {
+      "n": 100,
+      "median": 0.81,
+      "min": 0.786,
+      "max": 0.881,
+      "reps": 3,
+      "gave_up_per_s": 0.0,
+      "denial_rate": 0.996,
+      "p99_ms": 16040.3
+     }
+    ]
+   }
+  }
+ ]
+}

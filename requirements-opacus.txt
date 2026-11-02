@@ -1,0 +1,9 @@
+# Only for experiments/calibrate_dpsgd.py. Kept apart from requirements.txt so the
+# service image and the experiment harnesses stay free of torch.
+#
+#   python -m venv ../.venv-opacus
+#   ../.venv-opacus/bin/pip install -r requirements-opacus.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+opacus

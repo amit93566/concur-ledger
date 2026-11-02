@@ -65,6 +65,10 @@ class RunBody(BaseModel):
     ] = "none"
 
 
+class HoldAction(BaseModel):
+    action: Literal["release", "charge"]
+
+
 class ConstraintBody(BaseModel):
     enabled: bool
 

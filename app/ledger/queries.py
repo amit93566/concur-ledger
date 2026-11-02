@@ -43,6 +43,17 @@ async def get_dataset(conn: AsyncConnection, dataset_id: UUID) -> dict[str, Any]
     return await cur.fetchone()
 
 
+async def recent_records(
+    conn: AsyncConnection, dataset_id: UUID, limit: int
+) -> list[dict[str, Any]]:
+    cur = await conn.execute(
+        f"SELECT {RECORD_COLUMNS} FROM spend_records WHERE dataset_id = %s "
+        "ORDER BY reserved_at DESC LIMIT %s",
+        (dataset_id, limit),
+    )
+    return await cur.fetchall()
+
+
 async def list_datasets(conn: AsyncConnection) -> list[dict[str, Any]]:
     cur = await conn.execute(
         f"SELECT {DATASET_COLUMNS} FROM datasets ORDER BY created_at DESC"

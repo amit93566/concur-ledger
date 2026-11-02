@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS spend_records (  -- one row per reservation attempt
     UNIQUE (dataset_id, idempotency_key)
 );
 
+-- Who settled a hold from the dashboard. Set while the row is still `reserved`,
+-- so a settled row never changes and the audit log shows who acted.
+ALTER TABLE spend_records ADD COLUMN IF NOT EXISTS resolved_by TEXT;
+
 CREATE INDEX IF NOT EXISTS spend_records_dataset_status_idx
     ON spend_records (dataset_id, status);
 

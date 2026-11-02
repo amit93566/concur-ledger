@@ -7,12 +7,13 @@ jobs. This repository shows that a plausible naive enforcement implementation
 **can be raced into overspending the cap**, that a correct one **cannot**, and
 that a crash mid-protocol **cannot corrupt the ledger**.
 
-This covers Experiments 1–4: four reserve strategies, the cost sweep, the
-isolation, epsilon and extended fault evidence, and a governance layer (a
-tamper-evident audit log and role-based access).
+This covers Experiments 1–4: four reserve strategies, the cost sweep, a duration
+calibrated from real DP-SGD training, the isolation, epsilon and extended fault
+evidence, and a governance layer (a tamper-evident audit log, role-based access
+and a web dashboard).
 
-Companion documents: `IMPLEMENTATION_PLAN.md` (what to build),
-`WORKFLOWS.md` (how to run it), `DEMO_CHECKLIST.md` (what to prove).
+The planning documents (`IMPLEMENTATION_PLAN.md`, `WORKFLOWS.md`,
+`DEMO_CHECKLIST.md`) are kept outside this repository.
 
 ---
 
@@ -23,6 +24,10 @@ Companion documents: `IMPLEMENTATION_PLAN.md` (what to build),
 no number in it can drift from the evidence. The tables below are a snapshot
 from one such run and will differ in the tails from yours; breach/no-breach
 verdicts are stable, the exact overshoot figures are not.
+
+`results/` is gitignored, so the CSVs and figures are not in this repository. The
+`make` targets below and `scripts/run_final.sh` regenerate them; the dashboard's
+summary of Experiment 3 is committed as `dashboard/public/results.json`.
 
 **Experiment 1 — the breach is real.** Cap 10, seeded at spent 6 (4 of
 headroom), N concurrent reserves of ε=2. Only 2 should ever succeed.
@@ -113,13 +118,14 @@ load at N = 2, 3, 5, 10, 20, 50, 100, with the database CHECK constraint still d
 
 525 runs, zero breaches, and **exactly 2 successes in every single run** — the
 denial count is not merely safe, it is exactly correct. `serializable` needed
-24 | 75 | 145 | 138 | 106 | 87 | 85 retries in total at N = 2, 3, 5, 10, 20, 50, 100, with no give-ups. They fall at
+25 | 75 | 151 | 119 | 127 | 79 | 73 retries in total at N = 2, 3, 5, 10, 20, 50, 100, with no give-ups. They fall at
 high N because late arrivals see a full budget and are denied without a conflict.
 
 **Experiment 4 — the crash is survivable.** Budget survives a crash as a hold,
 never as a loss and never as a double-spend; a retried commit charges exactly
 once; releasing a committed reservation is rejected. `make exp4-ext` adds crash
-points the reserve→commit gap cannot reach, 10 repetitions each:
+points the reserve→commit gap cannot reach, 10 repetitions each. All of these ran
+on the final build, dashboard included:
 
 | fault | what it reaches | checks passed |
 |---|---|---:|
@@ -132,7 +138,7 @@ points the reserve→commit gap cannot reach, 10 repetitions each:
 | db-kill | SIGKILL Postgres under N=20 load | 4/4 |
 | kill-under-load | service crash with 19 others in flight | 4/4 |
 
-In db-kill, 2126 acknowledged, 0 missing, and 172 committed but never acknowledged: the commit
+In db-kill, 1207 acknowledged, 0 missing, and 166 committed but never acknowledged: the commit
 landed while the client saw an error. That is the case retry by idempotency key
 exists for. Not tested: disk loss, a disk that lies about fsync, network
 partitions, or clock faults.
@@ -169,6 +175,11 @@ deadlocks. Median completed cycles/s, unconstrained regime:
 - **Read `serializable` at high N as a range.** Repetitions split into slow and
   fast groups: 9.6–60.3/s at N=100, 10 ms. The rise in its median from N=64 to
   N=100 is that split, not a recovery.
+- **How far `serializable` falls is not stable between runs.** At N=64, 10 ms it
+  gave 78/s in the pilot and 89/s in the four-worker trial on 29 Oct, 15–20/s in
+  this sweep, and about 10/s unpinned on 1 Nov. Pinning was ruled out as the
+  cause; the rest is unexplained. In every run it was slower than `atomic` and
+  the only strategy that gave up.
 - **Near the cap, at 1 s, the cap sets the throughput.** Each operation holds 1 of
   a cap of 10, so 10 holds at once allow 10 cycles/s. The safe strategies stay at
   about 10/s and deny over 90% of decisions from N=16. `naive` reaches 12.7/s:
@@ -179,6 +190,48 @@ deadlocks. Median completed cycles/s, unconstrained regime:
   peaks around N=32 for `atomic` and N=64 for `for_update`, then drops. The likely
   reason is that most requests are queued rather than holding budget at high N,
   but this was not tested.
+
+**The long operation, calibrated.** The 1 s duration above was an assumption.
+`experiments/calibrate_dpsgd.py` measures a real job: DP-SGD on MNIST, CPU only,
+with the Opacus example settings (15 epochs, 3 runs). Training took 206.8–234.6 s,
+median 212.6 s, so a real job is about 200 times longer than 1 s. One epoch took
+about 14 s. It reached ε = 0.922 at δ = 1e-5 and 94.3–94.9% test accuracy, on
+Opacus 1.6.0 and torch 2.15.0. The published figure for these settings is ε = 1.16,
+from an older RDP conversion; the same accountant gives both.
+
+Experiment 3 was then repeated at 14 s, one real epoch, in both regimes: 72 cells
+(4 strategies × 3 values of N × 2 regimes × 3 reps), 84 s measured per cell. Every
+cell held I1 and I2, with 0 client timeouts and 0 deadlocks. Median completed
+cycles/s:
+
+| 14 s operation | unconstrained N=8 | 32 | 100 | near cap N=8 | 32 | 100 |
+|---|---:|---:|---:|---:|---:|---:|
+| atomic | 0.57 | 2.29 | 7.14 | 0.57 | 0.71 | 0.71 |
+| for_update | 0.57 | 2.29 | 7.14 | 0.57 | 0.71 | 0.71 |
+| serializable | 0.57 | 2.29 | 7.14 | 0.57 | 0.71 | 0.71 |
+| naive (unsafe) | 0.57 | 2.29 | 7.14 | 0.57 | 1.37 | 0.81 |
+
+- **Operation length does not reorder the strategies.** It removes `serializable`'s
+  throughput penalty once the request rate is low: all four are level at every N
+  here, where at 1 s it had fallen to 12.9/s at N=100. The drop seems to follow
+  N ÷ duration rather than N alone, which fits these three durations but was not
+  tested directly. `serializable` is not free even so: it gave up 20 times at
+  unconstrained N=100.
+- **Near the cap, budget sets the rate.** The safe strategies sit at 0.71/s, which
+  is 10 holds ÷ 14 s. `naive` reaches 1.37/s at N=32, which means about 19 holds
+  running at once against a cap that allows 10.
+- **A full 213 s job was not swept.** Each cell would take well over 15 minutes.
+  At that length N=100 is about 0.5 cycles/s, so the same result is expected, but
+  that is extrapolation.
+
+```bash
+../.venv-opacus/bin/python experiments/calibrate_dpsgd.py   # see requirements-opacus.txt
+make pin
+ARGS="--ns 8,32,100 --durations 14000 --reps 3 --warmup 20 --measure 84 --timeout 120 --resume"
+taskset -c 10,11 .venv/bin/python experiments/exp3_sweep.py --regime unconstrained $ARGS --out results/exp3_calibrated.csv
+taskset -c 10,11 .venv/bin/python experiments/exp3_sweep.py --regime near_cap $ARGS --out results/exp3_calibrated_nearcap.csv
+make unpin
+```
 
 **Real ε, end to end.** An OpenDP noisy count at Laplace scale 0.5 costs
 ε = 2.0. Against cap 10 / spent 6, two such queries commit (reaching exactly
@@ -193,9 +246,12 @@ OpenDP reported.
 
 ```bash
 cp .env.example .env          # set DB_PORT if 5432 is already taken locally
-docker compose up -d          # Postgres (named volume) + the service, one command
+docker buildx build --allow network.host --network host -t concur-ledger-app --load .
+docker compose up -d          # Postgres (named volume) + the service
 make health
 ```
+
+The explicit build is explained in the [build note](#build-note-wsl2).
 
 The experiment harnesses run on the host, so they need a virtualenv either way:
 
@@ -238,8 +294,47 @@ make exp1-control # the same naive code, run sequentially -> no breach
 make exp2         # the fix, escalating to N=100
 make exp4         # crash: controlled abort
 make exp4-kill    # crash: real process kill
+make exp2-safe    # Experiment 2 for all three safe strategies
+make exp3         # the cost sweep (overnight); exp3-nearcap for the near-cap regime
+make exp4-ext     # crash points inside and after the transactions
+make demo-locks   # PRESENTATION: lock behaviour, live
+make demo-audit   # edit a sealed audit row; verification fails at that row
+make demo-rbac    # viewer gets 403; actor comes from the key
+make verify-audit # walk the audit hash chain
+make dashboard    # the web console, with demo keys
 make watch        # live ledger view for a second terminal during the demo
 ```
+
+`scripts/run_final.sh` runs every experiment behind the final numbers in order, and
+resumes after an interruption. A sweep takes about 10 hours.
+
+---
+
+## Dashboard
+
+`make dashboard` rebuilds the results summary and the image, then serves a React and
+Vite console at <http://localhost:8000/dashboard/> with three demo keys:
+
+| Key | Role | Can do |
+|---|---|---|
+| `demo-viewer-key` | viewer | See everything |
+| `demo-analyst-key` | analyst | Also verify the audit chain |
+| `demo-admin-key` | admin | Also release or charge a stale hold |
+
+- **Burn-down:** spent, held and free budget per dataset, live, with datasets past
+  their cap listed first. Opening a dataset shows its invariants and recent records.
+- **Stale holds:** reservations older than a chosen age. Release returns the
+  budget; Charge commits the full hold, the policy when the outcome is unknown.
+- **Audit log:** recent rows, who settled each hold, and a Verify chain button.
+  Verifying took about 13 s at 1.36 million rows, and the service stayed responsive.
+- **Results:** the calibration and the Experiment 3 charts. These are stored
+  results, not live data.
+
+The harnesses cannot run with RBAC on, so `make dashboard` leaves it on and tells you
+to turn it off with `docker compose up -d app` before any experiment. With RBAC off the
+console opens with no sign-in, shows a warning, and every action is open.
+
+These keys are for demos only. A real deployment needs its own `API_KEYS`.
 
 ---
 
@@ -266,7 +361,7 @@ moves reserved → spent. This is what makes a crash between deciding and
 publishing safe. See `app/main.py:run_job`; note that no
 `async with pool.connection()` wraps the adapter call.
 
-### The two reserve strategies
+### The reserve strategies
 
 `naive` (`app/enforcement/naive.py`) — a faithful read → check → write. The read
 runs in its own transaction which then ends; the cap check happens in Python on
@@ -315,8 +410,6 @@ is never counted as a denial.
 `naive_txn` is a variant of `naive` used in the race analysis, not a fifth
 strategy.
 
-### Invariants
-
 ### Isolation level
 
 Pinned to **READ COMMITTED** in `app/db.py`, not inherited. The atomic strategy's
@@ -327,6 +420,8 @@ SERIALIZABLE the same situation raises SQLSTATE `40001` instead, which is safe
 only with a retry loop — that is the `serializable` strategy. The server
 default was already READ COMMITTED, so pinning it invalidates no earlier result;
 it makes a dependency explicit. Every results row now records the level in force.
+
+### Invariants
 
 - **I1** cap safety: `epsilon_spent + epsilon_reserved <= epsilon_cap`
 - **I2** ledger agreement: running columns equal the sums over record rows
@@ -389,6 +484,14 @@ default bridge, so `pip install` inside the image build cannot resolve pypi.org
 without it. It affects the build only, never the running container's networking,
 and is harmless on other platforms.
 
+Docker Compose 5.6 with buildx 0.38 refuses that setting in `docker compose build`
+and asks for `--allow=network.host`, which it does not accept. Build the image
+directly instead, as `make dashboard` does:
+
+```bash
+docker buildx build --allow network.host --network host -t concur-ledger-app --load .
+```
+
 ### Measurement-validity caveats
 
 The harness and the server share one machine, and four things about that bear on
@@ -400,8 +503,8 @@ how the numbers are read.
   which records `max_in_flight`: all N requests overlapped in every run. The
   mid-term safety conclusions still held.
 - **Admission spread.** The single service process admits requests one at a time,
-  about 2–5 ms apart, so `arrival_spread_ms` grows with N: ~15 ms at N=5,
-  ~208 ms at N=50, ~482 ms at N=100. This does not affect the safety
+  a few ms apart, so `arrival_spread_ms` grows with N: ~13 ms at N=5,
+  ~216 ms at N=50, ~714 ms at N=100 for `atomic`. This does not affect the safety
   conclusions (a breach either happened or it did not), but it is why only a few
   backends wait on the row lock at any instant.
 - **Idle-vCPU wake-up latency (WSL2).** An atomic reserve takes ~4 ms back to back,
@@ -409,7 +512,9 @@ how the numbers are read.
   spinners to remove this (`--keep-awake`, recorded per row). Experiments 1, 2 and
   4 do not, so treat their latencies as upper bounds; their verdicts are unaffected.
 - **Ceilings in Experiment 3.** At 10 ms operations, throughput is capped by the one
-  hot dataset row, naive included; four uvicorn workers did not raise it (`UVICORN_WORKERS`
+  hot dataset row, naive included. In one repetition at N=64, four uvicorn workers did
+  not raise it for `atomic` (143/s against 147/s), but `serializable` gave up far less
+  (302 against 1,563) and reached 89/s. That was not followed up (`UVICORN_WORKERS`
   stays, default 1). The no-op ceiling is itself limited by the single-threaded
   client. Core pinning separates processes onto vCPUs, not physical cores; each
   row records the affinity observed.
@@ -422,12 +527,23 @@ how the numbers are read.
   disconnected`; in the unconstrained regime that is 10 of 758,585. They appear
   mainly at high N and in 10 ms cells, 6 of the 10 within 1.4 s of a cell
   starting. A keep-alive race would fit, but the cause is not established. Every
-  affected cell held its invariants.
-- **Experiment 3 predates the governance layer.** Its numbers come from a build
-  without the audit trigger or RBAC. A 6-cell check with the trigger on (1 rep)
+  affected cell held its invariants. The 14 s sweep had 1 more, cause also unknown.
+- **The 14 s sweep ran across two days.** It stopped after 70 of 72 cells on 1 Nov,
+  cause unknown. Two near-cap cells (`atomic` N=8 and `serializable` N=32, rep 3) ran
+  on 2 Nov on the same image, on battery. Their throughput matched reps 1 and 2
+  exactly. `serializable` N=32 rep 3 denied 165 requests/s against 224 and 229, the
+  lowest of the 12 cells at that N, so quote near-cap denial rates there as a range.
+- **Experiment 3's main sweep predates the governance layer.** Its numbers come from
+  a build without the audit trigger or RBAC. The 14 s sweep had the trigger on, so
+  the two are not from one build. A 6-cell check with the trigger on (1 rep)
   was inside the measured range for `atomic` and `serializable` at N=64, and
   5–10% below the bottom of it for `for_update` at N=64 and `serializable` at
   N=8, so a small audit overhead is possible. It was not measured properly.
+- **What ran on the final build.** Experiment 4 (72/72 checks), `exp2-safe` (525
+  runs, exactly 2 granted in each), the audit demo and the RBAC demo were re-run on
+  the build with the dashboard. Experiments 1 and 3 and the isolation and ε evidence
+  come from earlier builds. The dashboard's routes are not on the reserve path; the
+  schema gained one nullable column, `resolved_by`.
 
 ---
 
@@ -439,12 +555,15 @@ app/enforcement/   naive.py, naive_single_txn.py, atomic.py, for_update.py, seri
 app/auth.py        API keys and roles
 app/faults.py      named crash points for Experiment 4
 app/adapters/      opendp_adapter.py (real eps), passthrough.py, synthetic.py (stubs)
-app/ledger/        init_db.py (schema + CHECK flag), queries.py (invariants)
-app/main.py        reserve / commit / release / run, fault injection
+app/ledger/        init_db.py (schema + CHECK flag), queries.py (invariants),
+                   audit.py (audit view, chain check, stale holds)
+app/main.py        reserve / commit / release / run, fault injection, audit and hold routes
+dashboard/         the web console (React + Vite), served at /dashboard
 experiments/       harness_asyncio.py (Exp 1&2), exp3_sweep.py, crash_test.py (Exp 4),
-                   opendp_demo.py, verify_audit.py, demo_audit.py, demo_rbac.py
+                   calibrate_dpsgd.py, dashboard_results.py, opendp_demo.py,
+                   verify_audit.py, demo_audit.py, demo_rbac.py
 docs/              privatekube-comparison.md (Gate A)
-results/           generated CSVs
+results/           generated CSVs and figures, gitignored
 ```
 
 ## Known limitations
@@ -454,15 +573,16 @@ safety result; each bounds what it covers.
 
 - **An orphaned hold is not reclaimed automatically.** A crash between reserve
   and commit leaves budget `reserved` — correctly, since the operation may have
-  run — but nothing expires it. Recovery today is a manual `POST
-  /reservations/{id}/release`, which is what Experiment 4 exercises. The
-  designed fix is a **lease**: give each reservation an `expires_at`, exclude
+  run — but nothing expires it. Recovery is an operator's decision: `GET /holds` and
+  the dashboard list stale holds, and an admin releases or charges each one through
+  `POST /holds/{id}/resolve`, which records who did it. The designed automatic fix is a **lease**: give each reservation an `expires_at`, exclude
   expired rows from the reserve predicate, and have a reaper release them. That
   moves the failure from "budget locked forever" to "budget locked for at most
   one lease period", and it introduces a real trade-off — too short a lease
   releases a hold while the operation is still running, which is the one way
-  this design could double-spend. Not built: on an unknown outcome the specified
-  policy is to charge the hold, not release it (fail closed for privacy).
+  this design could double-spend. Leases are not built, because they would change
+  the measured reserve code. On an unknown outcome the policy is to charge the hold,
+  not release it (fail closed for privacy).
 - **One contended row.** Every experiment targets a single dataset row. That is
   the worst case for safety and the right choice for proving the cap holds, but
   it says nothing about throughput across many datasets, where the hotspot
@@ -471,8 +591,8 @@ safety result; each bounds what it covers.
 - **The audit chain proves less than it may seem to.** It shows that sealed rows
   were not changed. Rows are unprotected until sealed, about a second later.
   Someone with full database access can rewrite the whole chain or cut rows off
-  its end; only comparing the head printed by `make verify-audit` with a copy kept
-  elsewhere catches that.
+  its end; only comparing the head shown by `make verify-audit` or the dashboard
+  with a copy kept elsewhere catches that.
 - **RBAC is off by default.** The harnesses send no key, so it runs only when
   `API_KEYS` is set. Any real deployment must set it. Keys are static, with no
   rotation or expiry.
@@ -482,6 +602,8 @@ safety result; each bounds what it covers.
   ledger's — and the reserve predicate generalises to a conjunction over both
   dimensions (or over per-α RDP terms) without changing the concurrency
   argument. But as it stands the system enforces the simplest accounting only.
+  A DP-SGD job shows the gap: its cost is ε = 0.922 at δ = 1e-5, and the ledger could
+  charge only the ε.
 - **Zero breaches is evidence, not proof.** 175 atomic runs found no violation.
   That is an empirical result over the tested conditions. The *argument* for why
   it cannot breach is PostgreSQL's documented READ COMMITTED behaviour: a
@@ -490,22 +612,25 @@ safety result; each bounds what it covers.
   committed row version** and affects zero rows if the predicate no longer
   holds. The measurement corroborates the argument; it does not replace it.
 - **Three process kills.** The controlled-abort path has many runs, but the real
-  `os._exit` path has only 3, because each one costs a container restart. Enough
-  to show the protocol survives; too few to characterise anything rarer. Raise
-  the count before the final report.
+  `os._exit` path has only 3, because each one costs a container restart. The
+  extended kill points have 10 each. Enough to show the protocol survives; too few
+  to characterise anything rarer.
 - **Single machine.** Harness, service and database share one host, so
   high-N latency includes client-side scheduling. Safety conclusions are
-  unaffected — a breach either happened or it did not — but Experiment 3's cost
-  numbers will need a no-op baseline and a stated saturation point.
+  unaffected — a breach either happened or it did not — and Experiment 3's cost
+  numbers should be read against the no-op ceiling above.
 
 ---
 
 ## Scope
 
 **In:** two-phase protocol, all reserve strategies, OpenDP and synthetic adapters,
-Experiments 1–4 and their extensions, a hash-chained audit log, and RBAC.
+Experiments 1–4 and their extensions, a DP-SGD calibration through Opacus, a
+hash-chained audit log, RBAC, operator handling of stale holds, and a web dashboard.
 
-**Not built:** dashboard, Opacus.
+**Not built:** automatic leases for orphaned holds, δ enforcement, and an RDP
+accountant in the ledger. The calibration measures a job's cost; it does not run
+through the ledger.
 
 **Never in scope:** implementing DP mathematics, and deriving the cap. The cap is
 an organizational **policy input**; this system enforces whatever cap it is
