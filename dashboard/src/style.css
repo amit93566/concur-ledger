@@ -99,8 +99,35 @@ td { padding: 6px 10px; border-bottom: 1px solid var(--line); }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
 .sw-atomic { background: var(--atomic); } .sw-for_update { background: var(--for_update); } .sw-serializable { background: var(--serializable); } .sw-naive { background: var(--naive); }
 
+/* live demo */
+.act { background: var(--sheet); border: 1px solid var(--line); padding: 4px 16px 12px; margin-bottom: 14px; min-width: 0; }
+.act h2 { margin-top: 14px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.step { font: 600 12px var(--mono); background: var(--accent); color: var(--sheet); padding: 2px 8px; border-radius: 2px; }
+.act h3 { font-size: 15px; margin: 4px 0 8px; }
+button.secondary { background: none; color: var(--accent); }
+.callout { background: var(--tint); padding: 6px 10px; margin: 8px 0; overflow-wrap: anywhere; }
+.budget { margin: 10px 0; }
+.dsname { margin: 0 0 2px; font-size: 13px; color: var(--soft); }
+.nums-line { margin: 0 0 6px; overflow-wrap: anywhere; }
+.meter { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; align-items: start; margin-bottom: 4px; }
+.mlabel { font: 500 12px var(--mono); color: var(--soft); padding-top: 1px; }
+.meter .bar { height: 18px; }
+.ticks { position: relative; height: 18px; font-size: 11.5px; color: var(--soft); }
+.ticks span { position: absolute; top: 1px; white-space: nowrap; }
+.ticks span:not(:first-child):not(.end) { transform: translateX(-50%); color: var(--ink); font-weight: 600; }
+.ticks .end { right: 0; }
+.ticks span.capend:not(:first-child):not(.end) { transform: translateX(-100%); padding-right: 4px; }
+.sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; }
+.side { border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
+.trace { margin: 6px 0; padding-left: 0; list-style: none; font-size: 12.5px; }
+.trace li { padding: 2px 0; overflow-wrap: anywhere; }
+.stale { color: var(--bad); font-weight: 600; }
+.fallback { font-size: 12.5px; color: var(--soft); margin: 6px 0; overflow-wrap: anywhere; }
+.fallback code { background: var(--tint); padding: 1px 5px; }
+
 @media (max-width: 760px) {
   .dsrow { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .nums { text-align: left; }
   .key { margin-left: 0; }
+  .meter { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }

@@ -104,11 +104,14 @@ export function BurnDownPage() {
   );
 }
 
-const WINDOWS = [[60, "1 minute"], [300, "5 minutes"], [3600, "1 hour"], [86400, "1 day"]] as const;
+const WINDOWS = [[0, "Any age"], [60, "1 minute"], [300, "5 minutes"], [3600, "1 hour"], [86400, "1 day"]] as const;
 
-export function HoldsPage({ me }: { me: Me }) {
-  const [older, setOlder] = useState(300);
-  const { data, error, refresh } = usePoll<{ total: number; holds: Hold[] }>(`/holds?older_than_s=${older}`, 4000);
+export function HoldsPage({ me, initialOlder = 300, focus = null, onClearFocus }: { me: Me; initialOlder?: number; focus?: string | null; onClearFocus?: () => void }) {
+  const [older, setOlder] = useState(initialOlder);
+  // Focused on one dataset (from the live demo), fetch the most the API allows,
+  // because holds come oldest first and the newest would otherwise be cut off.
+  const { data, error, refresh } = usePoll<{ total: number; holds: Hold[] }>(`/holds?older_than_s=${older}${focus ? "&limit=500" : ""}`, 4000);
+  const rows = (data?.holds ?? []).filter((h) => !focus || h.dataset_name === focus);
   const [confirming, setConfirming] = useState<{ hold: Hold; action: "release" | "charge" } | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [fail, setFail] = useState<string | null>(null);
@@ -144,6 +147,7 @@ export function HoldsPage({ me }: { me: Me }) {
           {WINDOWS.map(([s, label]) => <option key={s} value={s}>{label}</option>)}
         </select>
       </div>
+      {focus && <p className="guide">Showing holds on <b className="mono">{focus}</b> only.<button className="link" onClick={onClearFocus}>Show all</button></p>}
       <p className="guide"><b>Release</b> returns the budget. Use it only if you know the job published nothing. <b>Charge</b> spends the full hold. Use it when the outcome is unknown, because privacy fails closed.</p>
       {!canAct && <p className="guide">You can view holds. Settling one needs the admin role.</p>}
       {(error || fail) && <p className="err" role="alert">{error ?? fail}</p>}
@@ -159,7 +163,7 @@ export function HoldsPage({ me }: { me: Me }) {
         <table>
           <thead><tr><th>Dataset</th><th>Job</th><th>Strategy</th><th className="r">Held ε</th><th className="r">Age</th>{canAct && <th>Action</th>}</tr></thead>
           <tbody>
-            {(data?.holds ?? []).map((h) => (
+            {rows.map((h) => (
               <tr key={h.id}>
                 <td>{h.dataset_name}</td><td className="mono">{h.job_id}</td><td>{h.strategy}</td>
                 <td className="r mono">{fmt(h.epsilon)}</td><td className="r mono">{age(h.age_s)}</td>
@@ -171,11 +175,11 @@ export function HoldsPage({ me }: { me: Me }) {
                 )}
               </tr>
             ))}
-            {data?.holds.length === 0 && <tr><td colSpan={canAct ? 6 : 5}>No holds older than this. Nothing needs attention.</td></tr>}
+            {data && rows.length === 0 && <tr><td colSpan={canAct ? 6 : 5}>No holds older than this. Nothing needs attention.</td></tr>}
           </tbody>
         </table>
       </div>
-      {data && data.total > data.holds.length && <p className="sub">Showing the oldest {data.holds.length} of {data.total.toLocaleString()}.</p>}
+      {data && !focus && data.total > data.holds.length && <p className="sub">Showing the oldest {data.holds.length} of {data.total.toLocaleString()}.</p>}
     </>
   );
 }

@@ -100,6 +100,24 @@ export async function api<T>(path: string, method = "GET", body?: unknown): Prom
   return res.json();
 }
 
+/**
+ * Like `api`, but returns the status and body instead of throwing on a non-2xx.
+ * The live demo needs this because a denial (429) is a correct outcome whose
+ * body it shows, not a failure.
+ */
+export async function call<T>(path: string, method = "GET", body?: unknown): Promise<{ status: number; body: T }> {
+  const headers: Record<string, string> = {};
+  if (key) headers["X-API-Key"] = key;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => ({ detail: res.statusText }));
+  return { status: res.status, body: parsed as T };
+}
+
 /** Polls `path`, keeps the last good value, and skips a tick while one is in flight. */
 export function usePoll<T>(path: string, ms: number) {
   const [data, setData] = useState<T | null>(null);

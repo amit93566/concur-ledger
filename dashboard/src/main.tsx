@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, Me, api, hasKey, setKey } from "./api";
+import { DemoPage } from "./demo";
 import { AuditPage, BurnDownPage, HoldsPage } from "./pages";
 import { ResultsPage } from "./results";
 import "./style.css";
 
 const TABS = [
+  ["demo", "Live demo"],
   ["burn", "Burn-down"],
   ["holds", "Stale holds"],
   ["audit", "Audit log"],
@@ -41,6 +43,8 @@ function App() {
   const [tab, setTab] = useState<Tab>("burn");
   const [attempt, setAttempt] = useState(0);
   const [down, setDown] = useState<string | null>(null);
+  const [holdsWindow, setHoldsWindow] = useState(300);
+  const [holdsFocus, setHoldsFocus] = useState<string | null>(null);
 
   useEffect(() => {
     api<Me>("/whoami")
@@ -70,7 +74,7 @@ function App() {
         <div className="brand">concur-ledger</div>
         <nav aria-label="Pages">
           {TABS.map(([id, label]) => (
-            <button key={id} className={tab === id ? "on" : ""} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
+            <button key={id} className={tab === id ? "on" : ""} aria-current={tab === id ? "page" : undefined} onClick={() => { setHoldsFocus(null); setTab(id); }}>
               {label}
             </button>
           ))}
@@ -88,7 +92,11 @@ function App() {
       </header>
       <main className="page">
         {tab === "burn" && <BurnDownPage />}
-        {tab === "holds" && <HoldsPage me={me} />}
+        {/* Kept mounted while hidden, so the demo's state survives a visit to another tab. */}
+        <div hidden={tab !== "demo"}>
+          <DemoPage me={me} onOpenHolds={(name) => { setHoldsWindow(0); setHoldsFocus(name); setTab("holds"); }} />
+        </div>
+        {tab === "holds" && <HoldsPage me={me} initialOlder={holdsWindow} focus={holdsFocus} onClearFocus={() => setHoldsFocus(null)} />}
         {tab === "audit" && <AuditPage me={me} />}
         {tab === "results" && <ResultsPage />}
       </main>
