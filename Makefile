@@ -1,7 +1,7 @@
 .PHONY: help up down reset-db app app-stop app-logs psql health smoke \
         exp1 exp1b exp1c exp2 exp2-safe exp3 exp3-pilot exp3-noop exp3-nearcap exp4 exp4-ext exp1c-n50 pin unpin \
         eps-table exp-eps-scale exp-eps-round exp-isolation exp-lock-waits demo-locks exp4-kill opendp exp-opendp mid-demo watch clean \
-        demo-breach demo-txn demo-safe demo-crash dashboard report run-report summary bundle figures docs
+        demo-breach demo-txn demo-safe demo-crash dashboard demo-up report run-report summary bundle figures docs
 
 BASE ?= http://localhost:8000
 PY   ?= .venv/bin/python
@@ -36,6 +36,11 @@ app-logs:      ## follow the host service log
 reset-db:      ## wipe all ledger data (needed after a breach run re-enables the CHECK)
 	docker compose exec -T db psql -U postgres -d ledger -q \
 	  -c "DELETE FROM spend_records; DELETE FROM datasets;"
+	@# The console's runs, setup and access log. Clearing the setup sends the
+	@# admin back to Setup. Guarded, for a database that has not met the
+	@# console tables yet (PL/pgSQL plans a statement only when it runs).
+	@docker compose exec -T db psql -U postgres -d ledger -q \
+	  -c "DO 'BEGIN IF to_regclass(''demo_runs'') IS NOT NULL THEN DELETE FROM demo_runs; DELETE FROM demo_setup; DELETE FROM access_log; END IF; END'"
 	@echo "ledger cleared"
 
 psql:          ## open a psql shell on the ledger
@@ -208,7 +213,10 @@ demo-audit:    ## DEMO -- edit a sealed audit row; verification fails at that ro
 
 # RBAC is off by default, because the harnesses send no key, so this restarts
 # the service with demo keys and restores it however the demo ends.
-DEMO_KEYS = demo-admin:demo-admin-key:admin,demo-analyst:demo-analyst-key:analyst,demo-viewer:demo-viewer-key:viewer
+# team-1 .. team-8 (role analyst) are the logins the console's runs sign their
+# requests with; the admin picks how many take part.
+TEAM_KEYS = team-1:team-1-key:analyst,team-2:team-2-key:analyst,team-3:team-3-key:analyst,team-4:team-4-key:analyst,team-5:team-5-key:analyst,team-6:team-6-key:analyst,team-7:team-7-key:analyst,team-8:team-8-key:analyst
+DEMO_KEYS = demo-admin:demo-admin-key:admin,demo-analyst:demo-analyst-key:analyst,demo-viewer:demo-viewer-key:viewer,$(TEAM_KEYS)
 
 demo-rbac:     ## DEMO -- viewer gets 403 on reserve; actor comes from the key
 	@trap 'docker compose up -d app >/dev/null 2>&1; \
@@ -216,6 +224,15 @@ demo-rbac:     ## DEMO -- viewer gets 403 on reserve; actor comes from the key
 	API_KEYS='$(DEMO_KEYS)' docker compose up -d app >/dev/null 2>&1 || exit 1; \
 	for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done; \
 	$(PY) experiments/demo_rbac.py
+
+# The console as it is demonstrated: database and service up with the demo and
+# team keys, no rebuild. Like `dashboard`, it leaves RBAC on.
+demo-up:       ## DEMO -- start db + service with the demo and team keys (RBAC on)
+	docker compose up -d db
+	API_KEYS='$(DEMO_KEYS)' docker compose up -d app
+	@for i in $$(seq 1 60); do curl -sf $(BASE)/health >/dev/null && break || sleep 1; done
+	@echo "open $(BASE)/dashboard/ -- demo-admin-key, team-1-key .. team-8-key, demo-viewer-key"
+	@echo "before any experiment from the terminal, turn RBAC back off: docker compose up -d app"
 
 # Leaves RBAC on, which the harnesses cannot use, so it says how to turn it off.
 dashboard:     ## DEMO -- console with the demo keys at $(BASE)/dashboard/

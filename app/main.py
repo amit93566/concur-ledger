@@ -27,7 +27,7 @@ from app.adapters import (  # noqa: F401  (registration)
     passthrough,
     synthetic,
 )
-from app import faults
+from app import demo, faults
 from app.auth import Principal, require
 from app.config import settings
 from app.db import close_pool, get_pool, open_pool
@@ -130,8 +130,11 @@ async def lifespan(app: FastAPI):
         print("!! this is expected after Experiment 1; reset with `make reset-db`.")
 
     sealer = asyncio.create_task(_seal_audit_log())
+    background = await demo.startup()
     yield
     sealer.cancel()
+    for task in background:
+        task.cancel()
     await close_pool()
 
 
@@ -561,10 +564,15 @@ async def run_job(
 # --------------------------------------------------------------------------
 
 
-@app.get("/audit", dependencies=[Depends(require("viewer"))])
-async def audit_rows(limit: int = Query(100, ge=1, le=500)):
+@app.get("/audit")
+async def audit_rows(
+    limit: int = Query(100, ge=1, le=500),
+    principal: Principal | None = Depends(require("viewer")),
+):
+    # A team (analyst) sees its own rows only; admin and viewer see every row.
+    own = principal.name if principal and principal.role == "analyst" else None
     async with get_pool().connection() as conn:
-        rows = await audit.recent(conn, limit)
+        rows = await audit.recent(conn, limit, own)
     return [
         {**r, "at": r["at"].isoformat(), "record_id": str(r["record_id"])} for r in rows
     ]
@@ -691,6 +699,9 @@ async def reserve_and_abort(
         status_code=200,
     )
 
+
+# The demo console's setup, runs and access log (app/demo.py).
+demo.install(app)
 
 # Last, so no API route can be shadowed. Built into the image by the Dockerfile.
 DASHBOARD = Path(__file__).resolve().parents[1] / "dashboard" / "dist"

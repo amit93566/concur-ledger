@@ -28,9 +28,14 @@ async def seal(conn: AsyncConnection) -> None:
     await conn.execute("SELECT audit_seal()")
 
 
-async def recent(conn: AsyncConnection, limit: int) -> list[dict[str, Any]]:
+async def recent(
+    conn: AsyncConnection, limit: int, actor: str | None = None
+) -> list[dict[str, Any]]:
+    """Newest first; only one actor's rows when `actor` is given (a team login)."""
     cur = await conn.execute(
-        f"SELECT {AUDIT_COLUMNS} FROM audit_log ORDER BY seq DESC LIMIT %s", (limit,)
+        f"SELECT {AUDIT_COLUMNS} FROM audit_log "
+        "WHERE (%s::text IS NULL OR payload->>'actor' = %s) ORDER BY seq DESC LIMIT %s",
+        (actor, actor, limit),
     )
     return await cur.fetchall()
 

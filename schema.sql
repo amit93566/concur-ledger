@@ -137,3 +137,49 @@ BEGIN
     END LOOP;
     RETURN sealed;
 END $$;
+
+-- Demo console state (app/demo.py). Nothing on the reserve path reads these.
+--
+-- demo_setup  the admin's choice of cap, epsilon per query and number of teams.
+--             One row; empty after `make reset-db`, which sends the admin to Setup.
+-- demo_runs   one row per experiment run started from the console, with its
+--             progress, so every window watches the same run.
+-- access_log  who called the API, when, and what came back. Written only while
+--             RBAC is on, so the harness experiments run without it.
+CREATE TABLE IF NOT EXISTS demo_setup (
+    id          INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    epsilon_cap NUMERIC(12,6) NOT NULL,
+    epsilon     NUMERIC(12,6) NOT NULL,
+    teams       INT NOT NULL,
+    updated_by  TEXT,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS demo_runs (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    exp         INT NOT NULL,
+    mode        TEXT NOT NULL,
+    strategy    TEXT NOT NULL,
+    dataset_id  UUID,                      -- no FK: reset-db deletes datasets first
+    started_by  TEXT,
+    status      TEXT NOT NULL,             -- running, breached, exhausted, done, stopped, interrupted, failed
+    params      JSONB NOT NULL,
+    progress    JSONB NOT NULL DEFAULT '[]',
+    detail      TEXT,
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS demo_runs_exp_idx ON demo_runs (exp, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS access_log (
+    seq     BIGSERIAL PRIMARY KEY,
+    at      TIMESTAMPTZ NOT NULL,
+    actor   TEXT,
+    role    TEXT,
+    method  TEXT NOT NULL,
+    path    TEXT NOT NULL,
+    route   TEXT,
+    status  INT NOT NULL,
+    ms      REAL
+);

@@ -118,15 +118,23 @@ export async function call<T>(path: string, method = "GET", body?: unknown): Pro
   return { status: res.status, body: parsed as T };
 }
 
-/** Polls `path`, keeps the last good value, and skips a tick while one is in flight. */
-export function usePoll<T>(path: string, ms: number) {
+/** Polls `path`, keeps the last good value, and skips a tick while one is in flight. A null path pauses it. */
+export function usePoll<T>(path: string | null, ms: number) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
+  const lastPath = useRef<string | null | undefined>(undefined);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let live = true;
+    // A different path is a different thing: drop the old value. A refresh of
+    // the same path keeps it, so the page does not flicker.
+    if (lastPath.current !== path) {
+      lastPath.current = path;
+      setData(null);
+    }
+    if (path === null) return;
     const run = async () => {
       if (busy.current) return;
       busy.current = true;
@@ -152,6 +160,102 @@ export function usePoll<T>(path: string, ms: number) {
 
   return { data, error, refresh: () => setTick((t) => t + 1) };
 }
+
+export type Setup = {
+  epsilon_cap: number;
+  epsilon: number;
+  teams: number;
+  team_names: string[];
+  updated_by: string | null;
+  updated_at: string;
+};
+export type SetupState = { setup: Setup | null; teams_available: number };
+export type TeamShot = {
+  team: string;
+  outcome: string;
+  received_at: number | null;
+  observed_spent: number | null;
+  observed_reserved: number | null;
+  detail: string | null;
+};
+export type Round = {
+  round: number;
+  granted: number;
+  denied: number;
+  gave_up: number;
+  errors: number;
+  spent: number;
+  held: number;
+  total: number;
+  spread_ms: number | null;
+  teams: TeamShot[];
+};
+export type SweepCell = {
+  strategy: string;
+  n: number;
+  completed: number;
+  denied: number;
+  gave_up: number;
+  errors: number;
+  retries: number;
+  seconds: number;
+  throughput: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+};
+export type Run = {
+  id: string;
+  exp: number;
+  mode: string;
+  strategy: string;
+  dataset_id: string | null;
+  started_by: string | null;
+  status: string;
+  params: Record<string, unknown> & { epsilon_cap?: number; epsilon?: number; teams?: string[] };
+  detail: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+export type RunDetail = Run & {
+  progress: unknown[];
+  dataset: Dataset | null;
+  invariants: Invariants | null;
+};
+export type AccessRow = {
+  seq: number;
+  at: string;
+  actor: string | null;
+  role: string | null;
+  method: string;
+  path: string;
+  route: string | null;
+  status: number;
+  ms: number | null;
+};
+export type Party = { actor: string | null; role: string | null; calls: number; blocked: number; last_at: string };
+
+export type Usage = {
+  team: string;
+  dataset_id: string;
+  dataset: string;
+  epsilon_cap: number;
+  exp: number | null;
+  strategy: string | null;
+  mode: string | null;
+  granted: number;
+  held_jobs: number;
+  denied: number;
+  released: number;
+  eps_spent: number;
+  eps_held: number;
+  last_at: string;
+};
+
+export const isTeam = (me: Me) => me.rbac_enabled && me.role === "analyst";
+
+export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const clock = (iso: string) => new Date(iso).toLocaleTimeString();
 
 export const fmt = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 3 });
 
