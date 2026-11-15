@@ -115,6 +115,28 @@ tr.hot td { background: var(--badbg); }
 .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-weight: 600; }
 .checks .ok { color: var(--good); } .checks .no { color: var(--bad); } .checks .info { color: var(--soft); font-weight: 400; }
 
+/* shared dataset and question builder */
+.qb { display: flex; gap: 10px 14px; flex-wrap: wrap; align-items: flex-end; }
+.qb label { display: grid; gap: 3px; font-size: 13px; color: var(--soft); }
+.qb select { color: var(--ink); min-width: 150px; }
+.price { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: baseline; margin: 10px 0 0; }
+.price b { font-size: 15px; background: var(--warnbg); color: var(--warn); padding: 1px 8px; }
+.askrow { display: flex; gap: 12px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+.askrow button { padding: 8px 22px; }
+.answer { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: baseline; background: var(--goodbg); color: var(--ink); padding: 10px 12px; margin: 12px 0 0; }
+.answer b { font-size: 20px; color: var(--good); }
+.answer.denied { background: var(--badbg); }
+.answer.denied b { font-size: 15px; color: var(--bad); }
+.ans { color: var(--soft); }
+.span2 { grid-column: 1 / -1; }
+.setlabel { color: var(--soft); margin-top: 6px; }
+.setup .price { margin: 0; }
+
+.card { background: var(--sheet); border: 1px solid var(--line); padding: 8px 14px; margin-bottom: 12px; }
+.card summary { cursor: pointer; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.card table { margin-top: 8px; }
+caption .pill { margin-left: 8px; font-weight: 500; }
+
 /* audit */
 .parties { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .parties button { background: var(--sheet); color: var(--ink); border: 1px solid var(--line); display: flex; gap: 6px; align-items: center; padding: 4px 10px; }
@@ -122,7 +144,7 @@ tr.hot td { background: var(--badbg); }
 .parties small { color: var(--soft); }
 
 /* setup */
-.setup { display: grid; grid-template-columns: max-content minmax(0, 220px); gap: 10px 14px; align-items: center; background: var(--sheet); border: 1px solid var(--line); padding: 16px; max-width: 560px; }
+.setup { display: grid; grid-template-columns: max-content minmax(0, 220px); gap: 10px 14px; align-items: center; background: var(--sheet); border: 1px solid var(--line); padding: 16px; max-width: 760px; }
 .setup label { color: var(--soft); }
 .formfoot { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .formfoot .pill { white-space: normal; }

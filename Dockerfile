@@ -13,6 +13,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY schema.sql .
+# The UCI Adult data the console's teams query (data/README.md).
+COPY data ./data
 COPY app ./app
 COPY --from=dashboard /ui/dist ./dashboard/dist
 

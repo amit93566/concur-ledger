@@ -183,3 +183,44 @@ CREATE TABLE IF NOT EXISTS access_log (
     status  INT NOT NULL,
     ms      REAL
 );
+
+-- The private dataset the console's teams query (data/adult.data, UCI Adult).
+-- Loaded once at start-up by app/demo.py; read only through OpenDP
+-- (app/adapters/adult.py). No endpoint returns a row of it.
+CREATE TABLE IF NOT EXISTS adult (
+    id             SERIAL PRIMARY KEY,
+    age            INT NOT NULL,
+    workclass      TEXT,
+    fnlwgt         INT,
+    education      TEXT,
+    education_num  INT NOT NULL,
+    marital_status TEXT,
+    occupation     TEXT,
+    relationship   TEXT,
+    race           TEXT,
+    sex            TEXT NOT NULL,
+    capital_gain   INT,
+    capital_loss   INT,
+    hours_per_week INT NOT NULL,
+    native_country TEXT,
+    income         TEXT NOT NULL
+);
+
+-- The standard question the automatic runs ask, and the budget the two teams
+-- share on the Shared dataset page.
+ALTER TABLE demo_setup ADD COLUMN IF NOT EXISTS query JSONB;
+ALTER TABLE demo_setup ADD COLUMN IF NOT EXISTS shared_dataset_id UUID;
+
+-- Each answer released to a team on an Adult question, with the question
+-- itself, so the data owner (admin) can set it beside the true value. The
+-- answer is already public to the team that asked; the true value is computed
+-- on demand and never stored or sent to a team.
+CREATE TABLE IF NOT EXISTS adult_answers (
+    reservation_id UUID PRIMARY KEY,
+    dataset_id     UUID NOT NULL,
+    actor          TEXT,
+    spec           JSONB NOT NULL,
+    answer         DOUBLE PRECISION,
+    at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS adult_answers_dataset_idx ON adult_answers (dataset_id);

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.adapters import AdapterUnavailable, get_adapter, registry
 from app.adapters import (  # noqa: F401  (registration)
+    adult,
     opendp_adapter,
     passthrough,
     synthetic,
@@ -295,10 +296,16 @@ async def records(dataset_id: UUID, limit: int = Query(500, ge=1, le=5000)):
     return [record_out(r) for r in rows]
 
 
-@app.get("/datasets/{dataset_id}/activity", dependencies=[Depends(require("viewer"))])
-async def activity(dataset_id: UUID, limit: int = Query(30, ge=1, le=200)):
+@app.get("/datasets/{dataset_id}/activity")
+async def activity(
+    dataset_id: UUID,
+    limit: int = Query(30, ge=1, le=200),
+    principal: Principal | None = Depends(require("viewer")),
+):
+    # A team (analyst) sees its own records only; admin and viewer see all.
+    own = principal.name if principal and principal.role == "analyst" else None
     async with get_pool().connection() as conn:
-        rows = await q.recent_records(conn, dataset_id, limit)
+        rows = await q.recent_records(conn, dataset_id, limit, own)
     return [record_out(r) for r in rows]
 
 
@@ -460,6 +467,7 @@ async def run_job(
     harness can split its client-side latency into ledger time and overhead.
     """
     t_start = time.perf_counter()
+    received_at = time.time()
     try:
         adapter = get_adapter(body.adapter)
         cost = adapter.epsilon_for(body.spec)  # deterministic, known up front
@@ -516,6 +524,7 @@ async def run_job(
                 "epsilon_cost": float(cost),
                 "retries": reserved.retries,
                 "timing_ms": timing,
+                **_observed(reserved, received_at),
             },
             status_code=429,
         )
@@ -543,6 +552,10 @@ async def run_job(
     # Committed and durable, but the client has not been told. A retry with the
     # same key must not charge twice.
     faults.point("crash_after_commit")
+    if body.adapter == "adult":
+        # The released answer and its question, for the data owner's view.
+        # After the commit and outside every ledger transaction.
+        await demo.record_answer(reserved.reservation_id, dataset_id, req.actor, body.spec, result.result)
     timing["total"] = _ms_since(t_start)
 
     return {
@@ -556,6 +569,17 @@ async def run_job(
         "dataset": dataset_out(settled.dataset),
         "retries": reserved.retries,
         "timing_ms": timing,
+        **_observed(reserved, received_at),
+    }
+
+
+def _observed(outcome, received_at: float) -> dict:
+    """The same race telemetry /reserve returns: when the request arrived and
+    what this caller read when it decided. Nothing branches on it."""
+    return {
+        "received_at": received_at,
+        "observed_spent": float(outcome.observed_spent) if outcome.observed_spent is not None else None,
+        "observed_reserved": float(outcome.observed_reserved) if outcome.observed_reserved is not None else None,
     }
 
 

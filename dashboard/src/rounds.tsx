@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Me, Round, RunDetail, SetupState, TeamShot, api, clock, fmt, isTeam } from "./api";
 import { Budget, RunControls, RunPicker, SetupChips, StatusPill, Waiting, useRuns } from "./common";
 import { MyShare } from "./team";
@@ -34,6 +34,7 @@ function Trace({ strategy, cap, eps, round }: { strategy: string; cap: number; e
           <li key={t.team}>
             <span className="team">{t.team}</span> {traceLine(strategy, cap, eps, t)} →{" "}
             <b className={t.outcome === "reserved" ? "" : "badtext"}>{t.outcome === "reserved" ? "GRANTED" : t.outcome.toUpperCase()}</b>
+            {t.answer !== undefined && t.answer !== null && <span className="ans"> answer {fmt(t.answer)}</span>}
             {stale && <span className="stale"> same stale read</span>}
           </li>
         );
@@ -42,7 +43,18 @@ function Trace({ strategy, cap, eps, round }: { strategy: string; cap: number; e
   );
 }
 
-function RunView({ run }: { run: RunDetail }) {
+/** The exact answer to the run's question, for the data owner (admin) only. */
+function Truth({ spec }: { spec: unknown }) {
+  const [truth, setTruth] = useState<number | null>(null);
+  const key = JSON.stringify(spec);
+  useEffect(() => {
+    if (!spec) return;
+    api<{ truth: number }>("/adult/truth", "POST", { spec }).then((r) => setTruth(r.truth)).catch(() => setTruth(null));
+  }, [key]);
+  return truth === null ? null : <span className="pill">true value {fmt(truth)} · owner only</span>;
+}
+
+function RunView({ run, owner }: { run: RunDetail; owner: boolean }) {
   const rounds = run.progress as Round[];
   const cap = Number(run.params.epsilon_cap);
   const eps = Number(run.params.epsilon);
@@ -54,6 +66,7 @@ function RunView({ run }: { run: RunDetail }) {
       <div className="runhead">
         <StatusPill run={run} />
         <span className="meta">{run.strategy} · started by {run.started_by ?? "-"} at {clock(run.started_at)} · {granted} granted in {rounds.length} rounds</span>
+        {owner && run.params.query !== undefined && <Truth spec={run.params.query} />}
       </div>
       {run.dataset && <Budget d={run.dataset} inv={run.invariants} />}
       {rounds.length > 0 && (
@@ -102,7 +115,7 @@ export function RoundsPage({ exp, me, setup }: { exp: 1 | 2; me: Me; setup: Setu
     <>
       <header className="pagehead">
         <h1>{title}</h1>
-        <SetupChips setup={setup?.setup ?? null} />
+        <SetupChips setup={setup?.setup ?? null} extra={[setup?.setup ? setup.setup.question : false]} />
       </header>
       {setup && !setup.setup ? <Waiting /> : (
         <>
@@ -117,7 +130,7 @@ export function RoundsPage({ exp, me, setup }: { exp: 1 | 2; me: Me; setup: Setu
             <RunPicker runs={runs} id={id} onPick={setPicked} />
           </div>
           {detail && isTeam(me) && <MyShare me={me} datasetId={detail.dataset_id} />}
-          {detail ? <RunView run={detail} /> : runs.length === 0 && <p className="empty">No runs yet.</p>}
+          {detail ? <RunView run={detail} owner={me.rbac_enabled && me.role === "admin"} /> : runs.length === 0 && <p className="empty">No runs yet.</p>}
         </>
       )}
     </>

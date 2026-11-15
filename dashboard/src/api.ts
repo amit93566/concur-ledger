@@ -161,11 +161,40 @@ export function usePoll<T>(path: string | null, ms: number) {
   return { data, error, refresh: () => setTick((t) => t + 1) };
 }
 
+export type Spec = { kind: "count" | "sum"; column?: string; filter: string; accuracy: string };
+export type Price = { question: string; epsilon: number; accuracy: number; confidence: number; scale: number };
+export type Catalog = {
+  dataset: string;
+  source: string;
+  license: string;
+  schema: { column: string; type: string; values: string }[];
+  rows: number;
+  columns: string[];
+  kinds: { key: string; label: string }[];
+  sum_columns: { key: string; label: string; bounds: [number, number] }[];
+  filters: { key: string; label: string }[];
+  levels: { key: string; label: string }[];
+};
+export type OwnerAnswer = {
+  id: string;
+  at: string;
+  team: string | null;
+  question: string;
+  status: string;
+  epsilon: number | null;
+  answer: number | null;
+  truth: number | null;
+  accuracy: number | null;
+};
 export type Setup = {
   epsilon_cap: number;
   epsilon: number;
   teams: number;
   team_names: string[];
+  query: Spec;
+  question: string;
+  shared_dataset_id: string | null;
+  shared_teams: string[];
   updated_by: string | null;
   updated_at: string;
 };
@@ -173,6 +202,7 @@ export type SetupState = { setup: Setup | null; teams_available: number };
 export type TeamShot = {
   team: string;
   outcome: string;
+  answer?: number | null;
   received_at: number | null;
   observed_spent: number | null;
   observed_reserved: number | null;

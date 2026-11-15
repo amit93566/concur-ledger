@@ -14,18 +14,25 @@ Who does what, as the console presents it:
     viewer   reads.
 
 Runs, by experiment:
-    1, 2   rounds: every team reserves at the same moment, then commits, until
-           the cap is breached (naive) or a round grants nothing.
+    1, 2   rounds: every team runs the admin's standard question at the same
+           moment, as a real OpenDP query on the Adult data (reserve, query,
+           commit), until the cap is breached (naive) or a round grants nothing.
+
+The Shared dataset: team-1 and team-2 ask their own questions of the Adult
+data, from their own browsers, against one budget the admin set. OpenDP prices
+each question before it is asked (/adult/price).
     3      a short cost sweep, in-process (no HTTP), over all four strategies.
     4      `work`: each team runs 3 s jobs back to back, so a restart catches
            some in flight. `abort`: each team reserves and never commits.
 """
 
 import asyncio
+import csv
 import statistics
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
@@ -34,7 +41,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from app.adapters import get_adapter
+from app.adapters import adult, get_adapter
 from app.auth import KEYS, Principal, _lookup, require
 from app.db import get_pool
 from app.enforcement.base import ReserveRequest, RetriesExhausted, get_strategy
@@ -95,20 +102,29 @@ def _stamp() -> str:
 # --------------------------------------------------------------------------
 
 
+DEFAULT_QUERY = {"kind": "count", "filter": "income_gt_50k", "accuracy": "high"}
+SHARED_TEAMS = 2  # team-1 and team-2 share the Adult budget on the Shared dataset page
+
+
 class SetupBody(BaseModel):
     epsilon_cap: Decimal = Field(gt=0, le=900000)
-    epsilon: Decimal = Field(gt=0, le=900000)
-    teams: int = Field(ge=1, le=8)
+    teams: int = Field(ge=2, le=8)  # how many teams race in Exp 1 and 2
+    query: dict[str, Any] = Field(default_factory=lambda: dict(DEFAULT_QUERY))
 
 
 def _setup_out(row: dict[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None
+    query = row["query"] or dict(DEFAULT_QUERY)
     return {
         "epsilon_cap": float(row["epsilon_cap"]),
         "epsilon": float(row["epsilon"]),
         "teams": row["teams"],
         "team_names": [n for n, _ in team_keys()[: row["teams"]]],
+        "query": query,
+        "question": adult.label(query),
+        "shared_dataset_id": str(row["shared_dataset_id"]) if row["shared_dataset_id"] else None,
+        "shared_teams": [n for n, _ in team_keys()[:SHARED_TEAMS]],
         "updated_by": row["updated_by"],
         "updated_at": row["updated_at"].isoformat(),
     }
@@ -116,7 +132,8 @@ def _setup_out(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 async def _load_setup(conn) -> dict[str, Any] | None:
     cur = await conn.execute(
-        "SELECT epsilon_cap, epsilon, teams, updated_by, updated_at FROM demo_setup WHERE id = 1"
+        "SELECT epsilon_cap, epsilon, teams, query, shared_dataset_id, updated_by, updated_at "
+        "FROM demo_setup WHERE id = 1"
     )
     return await cur.fetchone()
 
@@ -133,16 +150,120 @@ async def put_setup(body: SetupBody, principal: Principal | None = Depends(requi
     available = len(team_keys())
     if body.teams > available:
         raise HTTPException(400, f"only {available} team logins exist")
+    try:
+        priced = adult.price(body.query)  # epsilon comes from OpenDP, not the admin
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     async with get_pool().connection() as conn:
+        old = await _load_setup(conn)
+        shared = old["shared_dataset_id"] if old else None
+        if shared is not None and await q.get_dataset(conn, shared) is None:
+            shared = None
+        # A new cap is a new budget: the two teams start again from zero.
+        if shared is None or Decimal(old["epsilon_cap"]) != body.epsilon_cap:
+            ds = await q.create_dataset(conn, f"adult-shared-{_stamp()}", body.epsilon_cap, Decimal(0), Decimal(0))
+            shared = ds["id"]
         await conn.execute(
-            "INSERT INTO demo_setup (id, epsilon_cap, epsilon, teams, updated_by, updated_at) "
-            "VALUES (1, %s, %s, %s, %s, now()) ON CONFLICT (id) DO UPDATE SET "
-            "epsilon_cap = EXCLUDED.epsilon_cap, epsilon = EXCLUDED.epsilon, "
-            "teams = EXCLUDED.teams, updated_by = EXCLUDED.updated_by, updated_at = now()",
-            (body.epsilon_cap, body.epsilon, body.teams, principal.name if principal else None),
+            "INSERT INTO demo_setup (id, epsilon_cap, epsilon, teams, query, shared_dataset_id, updated_by, updated_at) "
+            "VALUES (1, %s, %s, %s, %s, %s, %s, now()) ON CONFLICT (id) DO UPDATE SET "
+            "epsilon_cap = EXCLUDED.epsilon_cap, epsilon = EXCLUDED.epsilon, teams = EXCLUDED.teams, "
+            "query = EXCLUDED.query, shared_dataset_id = EXCLUDED.shared_dataset_id, "
+            "updated_by = EXCLUDED.updated_by, updated_at = now()",
+            (body.epsilon_cap, Decimal(str(priced["epsilon"])), body.teams, Jsonb(body.query), shared,
+             principal.name if principal else None),
         )
         row = await _load_setup(conn)
     return {"setup": _setup_out(row), "teams_available": available}
+
+
+# --------------------------------------------------------------------------
+# the Adult dataset: what can be asked, and what it costs
+# --------------------------------------------------------------------------
+
+
+class PriceBody(BaseModel):
+    spec: dict[str, Any]
+
+
+async def record_answer(reservation_id, dataset_id, actor: str | None, spec: dict[str, Any], answer) -> None:
+    try:
+        async with get_pool().connection() as conn:
+            await conn.execute(
+                "INSERT INTO adult_answers (reservation_id, dataset_id, actor, spec, answer) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (reservation_id) DO NOTHING",
+                (reservation_id, dataset_id, actor, Jsonb(spec), answer),
+            )
+    except Exception as exc:  # the team already has its answer; never fail the job over this
+        print(f"!! could not record an Adult answer: {exc}")
+
+
+@router.get("/adult/answers", dependencies=[Depends(require("admin"))])
+async def adult_answers(dataset_id: UUID, limit: int = Query(100, ge=1, le=500)):
+    """The data owner's view: every question on a dataset, the noisy answer the
+    team received, and the true value beside it. Admin only."""
+    async with get_pool().connection() as conn:
+        cur = await conn.execute(
+            "SELECT r.id, r.reserved_at, r.actor, r.job_id, r.status, r.epsilon_committed, a.spec, a.answer "
+            "FROM spend_records r LEFT JOIN adult_answers a ON a.reservation_id = r.id "
+            "WHERE r.dataset_id = %s ORDER BY r.reserved_at DESC LIMIT %s",
+            (dataset_id, limit),
+        )
+        rows = await cur.fetchall()
+    out = []
+    for r in rows:
+        item = {
+            "id": str(r["id"]),
+            "at": r["reserved_at"].isoformat(),
+            "team": r["actor"],
+            "question": r["job_id"],
+            "status": r["status"],
+            "epsilon": float(r["epsilon_committed"]) if r["epsilon_committed"] is not None else None,
+            "answer": r["answer"],
+            "truth": None,
+            "accuracy": None,
+        }
+        if r["spec"] is not None:
+            priced = adult.price(r["spec"])
+            item["question"] = priced["question"]
+            item["truth"] = await adult.truth(r["spec"])
+            item["accuracy"] = priced["accuracy"]
+        out.append(item)
+    return out
+
+
+@router.post("/adult/truth", dependencies=[Depends(require("admin"))])
+async def adult_truth(body: PriceBody):
+    try:
+        return {"question": adult.label(body.spec), "truth": await adult.truth(body.spec)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/adult/catalog", dependencies=[Depends(require("viewer"))])
+async def adult_catalog():
+    data = await adult.rows()
+    return {
+        "dataset": "UCI Adult",
+        "source": "Becker and Kohavi (1996), UCI Machine Learning Repository, doi:10.24432/C5XW20",
+        "license": "CC BY 4.0",
+        "schema": adult.SCHEMA,
+        "rows": len(data),
+        "columns": ["age", "workclass", "education", "education_num", "marital_status", "occupation",
+                    "relationship", "race", "sex", "capital_gain", "capital_loss", "hours_per_week",
+                    "native_country", "income"],
+        "kinds": [{"key": "count", "label": "Count people"}, {"key": "sum", "label": "Sum a column"}],
+        "sum_columns": [{"key": k, "label": v[0], "bounds": v[1]} for k, v in adult.SUM_COLUMNS.items()],
+        "filters": [{"key": k, "label": v[0]} for k, v in adult.FILTERS.items()],
+        "levels": [{"key": k, "label": v[0]} for k, v in adult.LEVELS.items()],
+    }
+
+
+@router.post("/adult/price", dependencies=[Depends(require("viewer"))])
+async def adult_price(body: PriceBody):
+    try:
+        return adult.price(body.spec)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 # --------------------------------------------------------------------------
@@ -262,11 +383,17 @@ async def start_run(body: RunStart, principal: Principal | None = Depends(requir
             dataset_id = None
         else:
             teams = team_keys()[: setup["teams"]]
+            query = setup["query"] or dict(DEFAULT_QUERY)
             params = {
                 "epsilon_cap": float(setup["epsilon_cap"]),
                 "epsilon": float(setup["epsilon"]),
                 "teams": [n for n, _ in teams],
             }
+            if exp in (1, 2):
+                # Every team asks the admin's standard question of the Adult
+                # data; OpenDP sets its price.
+                params["query"] = query
+                params["question"] = adult.label(query)
             if exp == 4 and mode == "work":
                 params["job_ms"] = EXP4_JOB_MS
             name = f"exp{exp}-{strategy if exp in (1, 2) else mode}-{_stamp()}"
@@ -334,7 +461,6 @@ async def _warm(client: httpx.AsyncClient, n: int) -> None:
 
 
 async def _rounds(run_id: str, ds: str, strategy: str, params: dict[str, Any]) -> None:
-    eps = params["epsilon"]
     teams = [t for t in team_keys() if t[0] in params["teams"]]
     async with _client() as client:
         await _warm(client, len(teams))
@@ -342,39 +468,34 @@ async def _rounds(run_id: str, ds: str, strategy: str, params: dict[str, Any]) -
             if run_id in _stop:
                 return await _finish(run_id, "stopped")
 
-            async def reserve(name: str, key: str | None):
+            async def ask(name: str, key: str | None):
+                # One whole job: reserve, a real OpenDP query on Adult, commit.
                 r = await client.post(
-                    f"/datasets/{ds}/reserve",
+                    f"/datasets/{ds}/run",
                     json={
                         "job_id": f"round{rnd}-{name}",
                         "idempotency_key": f"{run_id}-{rnd}-{name}",
-                        "epsilon_cost": eps,
                         "strategy": strategy,
+                        "adapter": "adult",
+                        "spec": params["query"],
                         "actor": name,
                     },
                     headers=_headers(key),
                 )
-                return name, key, r.status_code, r.json()
+                return name, r.status_code, r.json()
 
-            shots = await asyncio.gather(*(reserve(n, k) for n, k in teams))
-
-            async def commit(rid: str, key: str | None):
-                await client.post(
-                    f"/reservations/{rid}/commit", json={"actual_cost": eps}, headers=_headers(key)
-                )
-
-            await asyncio.gather(
-                *(commit(b["reservation_id"], k) for _, k, s, b in shots if s == 200 and b.get("status") == "reserved")
-            )
+            shots = await asyncio.gather(*(ask(n, k) for n, k in teams))
 
             outcomes = []
-            for name, _, status, b in shots:
+            for name, status, b in shots:
                 outcome = (
-                    b.get("status") if status in (200, 429) else "gave_up" if status == 503 else "error"
+                    "reserved" if status == 200 else "denied" if status == 429
+                    else "gave_up" if status == 503 else "error"
                 )
                 outcomes.append({
                     "team": name,
                     "outcome": outcome,
+                    "answer": b.get("result") if status == 200 else None,
                     "received_at": b.get("received_at"),
                     "observed_spent": b.get("observed_spent"),
                     "observed_reserved": b.get("observed_reserved"),
@@ -696,7 +817,35 @@ def install(app: FastAPI) -> None:
         app.middleware("http")(_access_middleware)
 
 
+ADULT_FILE = Path(__file__).resolve().parents[1] / "data" / "adult.data"
+ADULT_COLUMNS = (
+    "age, workclass, fnlwgt, education, education_num, marital_status, occupation, "
+    "relationship, race, sex, capital_gain, capital_loss, hours_per_week, native_country, income"
+)
+INT_FIELDS = {0, 2, 4, 10, 11, 12}
+
+
+async def _load_adult() -> None:
+    """Loads data/adult.data into the adult table once, if it is empty."""
+    async with get_pool().connection() as conn:
+        cur = await conn.execute("SELECT count(*) AS n FROM adult")
+        if (await cur.fetchone())["n"] > 0 or not ADULT_FILE.exists():
+            return
+        with open(ADULT_FILE, newline="") as fh:
+            rows = [
+                [None if c == "?" else int(c) if i in INT_FIELDS else c for i, c in enumerate(f.strip() for f in r)]
+                for r in csv.reader(fh) if r
+            ]
+        async with conn.cursor() as c:
+            async with c.copy(f"COPY adult ({ADULT_COLUMNS}) FROM STDIN") as copy:
+                for row in rows:
+                    await copy.write_row(row)
+        print(f"loaded {len(rows)} Adult rows")
+
+
 async def startup() -> list[asyncio.Task]:
+    await _load_adult()
+    await adult.rows()  # read once now, so the first question is not the slow one
     async with get_pool().connection() as conn:
         # Whatever was running died with the previous process.
         await conn.execute(

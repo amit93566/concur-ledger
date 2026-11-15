@@ -7,11 +7,12 @@ import { CrashPage, Outage } from "./crash";
 import { ResultsPage } from "./results";
 import { RoundsPage } from "./rounds";
 import { SetupPage } from "./setup";
+import { SharedPage } from "./shared";
 import { SweepPage } from "./sweep";
 import { MyTeamPage } from "./team";
 import "./style.css";
 
-type Page = "exp1" | "exp2" | "exp3" | "exp4" | "team" | "audit" | "results" | "burn" | "setup";
+type Page = "shared" | "exp1" | "exp2" | "exp3" | "exp4" | "team" | "audit" | "results" | "burn" | "setup";
 
 const EXPERIMENTS: [Page, string][] = [
   ["exp1", "Exp 1 · Naive"],
@@ -85,9 +86,9 @@ function App() {
   // Remembered per tab, so a reload (say, after a restart) keeps the page.
   const [page, setPageState] = useState<Page>(() => {
     try {
-      return (sessionStorage.getItem("concur-ledger-page") as Page | null) ?? "exp1";
+      return (sessionStorage.getItem("concur-ledger-page") as Page | null) ?? "shared";
     } catch {
-      return "exp1";
+      return "shared";
     }
   });
   const setPage = (p: Page) => {
@@ -95,7 +96,7 @@ function App() {
     try {
       sessionStorage.setItem("concur-ledger-page", p);
     } catch {
-      // Then a reload starts at Exp 1.
+      // Then a reload starts at the Shared dataset.
     }
   };
   const [expOpen, setExpOpen] = useState(true);
@@ -141,7 +142,7 @@ function App() {
   const allowed = (p: Page) =>
     p === "team" ? team : p === "audit" ? !team : p === "burn" || p === "setup" ? isAdmin : true;
   // After reset-db there is no setup: the admin decides it before anything else.
-  const shown: Page = isAdmin && needsSetup ? "setup" : allowed(page) ? page : "exp1";
+  const shown: Page = isAdmin && needsSetup ? "setup" : allowed(page) ? page : "shared";
   const go = (p: Page) => () => setPage(p);
   const item = (p: Page, label: string) => (
     <button key={p} className={shown === p ? "on" : ""} aria-current={shown === p ? "page" : undefined} onClick={go(p)}>{label}</button>
@@ -152,6 +153,7 @@ function App() {
       <aside className="sidebar">
         <div className="brand">concur-ledger</div>
         <nav aria-label="Pages">
+          {item("shared", "Shared dataset")}
           <button className="group" aria-expanded={expOpen} onClick={() => setExpOpen(!expOpen)}>Experiments <span aria-hidden="true">{expOpen ? "▾" : "▸"}</span></button>
           {expOpen && <div className="sub">{EXPERIMENTS.map(([p, label]) => item(p, label))}</div>}
           {team ? item("team", "My team") : item("audit", "Audit logs")}
@@ -172,6 +174,7 @@ function App() {
       </aside>
       <main className="page">
         <Banner outage={outage} />
+        {shown === "shared" && <SharedPage me={me} setup={setup.data} />}
         {shown === "exp1" && <RoundsPage key="exp1" exp={1} me={me} setup={setup.data} />}
         {shown === "exp2" && <RoundsPage key="exp2" exp={2} me={me} setup={setup.data} />}
         {shown === "exp3" && <SweepPage me={me} />}
@@ -181,7 +184,7 @@ function App() {
         {shown === "audit" && <AuditPage me={me} />}
         {shown === "results" && <ResultsPage />}
         {shown === "burn" && isAdmin && <BurnDownPage />}
-        {shown === "setup" && isAdmin && <SetupPage setup={setup.data} onSaved={() => { setup.refresh(); setPage("exp1"); }} />}
+        {shown === "setup" && isAdmin && <SetupPage setup={setup.data} onSaved={() => { setup.refresh(); setPage("shared"); }} />}
       </main>
     </div>
   );

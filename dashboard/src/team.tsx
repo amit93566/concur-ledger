@@ -6,6 +6,7 @@ import { Access, Ledger } from "./audit";
 // server returns this team's rows only.
 
 export function runLabel(u: Usage) {
+  if (u.dataset.startsWith("adult-shared")) return "Shared dataset";
   if (u.exp === 1 || u.exp === 2) return `Exp ${u.exp} · ${u.strategy}`;
   if (u.exp === 4) return `Exp 4 · ${u.mode === "abort" ? "controlled abort" : "work"}`;
   if (u.dataset.startsWith("exp3-")) return `Exp 3 · ${u.dataset.split("-")[1]}`;

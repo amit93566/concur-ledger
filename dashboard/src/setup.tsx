@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { SetupState, api, clock, message } from "./api";
+import { SetupState, Spec, api, clock, message } from "./api";
+import { DEFAULT_SPEC, PriceTag, QuestionBuilder, usePrice } from "./shared";
 
-// The admin's choice of cap, epsilon per query and number of teams. Runs take
-// a copy when they start, so a change applies to the next run.
+// The admin's choices: the cap (the shared Adult budget, and each run's), the
+// standard question the automatic runs ask (OpenDP prices it), and how many
+// teams race in Exp 1 and 2. Runs copy these when they start.
 
-/** Can naive overshoot with these values? Each round asks for teams x eps; the
- * round that reaches the cap finds `rest` left. If one query still fits in it,
- * every team reads the same headroom and all are granted. */
+/** Can naive overshoot? Each round asks for teams x eps; the round that
+ * reaches the cap finds `rest` left, and if one query still fits in it, every
+ * team reads the same headroom and all are granted. */
 function naiveCanBreach(cap: number, eps: number, teams: number) {
   if (teams < 2 || !(cap > 0) || !(eps > 0)) return false;
   const round = teams * eps;
@@ -16,29 +18,31 @@ function naiveCanBreach(cap: number, eps: number, teams: number) {
 
 export function SetupPage({ setup, onSaved }: { setup: SetupState | null; onSaved: () => void }) {
   const [cap, setCap] = useState("100");
-  const [eps, setEps] = useState("2");
   const [teams, setTeams] = useState(6);
+  const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { price, error: priceError } = usePrice(spec);
   const current = setup?.setup ?? null;
   const available = setup?.teams_available ?? 8;
 
   useEffect(() => {
     if (current) {
       setCap(String(current.epsilon_cap));
-      setEps(String(current.epsilon));
       setTeams(current.teams);
+      setSpec(current.query);
     }
   }, [current?.updated_at]);
 
-  const capN = Number(cap), epsN = Number(eps);
-  const valid = capN > 0 && epsN > 0 && epsN <= capN;
-  const breach = naiveCanBreach(capN, epsN, teams);
+  const capN = Number(cap);
+  const eps = price?.epsilon ?? 0;
+  const valid = capN > 0 && !!price && eps <= capN;
+  const breach = naiveCanBreach(capN, eps, teams);
 
   const save = async () => {
     setBusy(true); setError(null);
     try {
-      await api("/demo/setup", "POST", { epsilon_cap: capN, epsilon: epsN, teams });
+      await api("/demo/setup", "POST", { epsilon_cap: capN, teams, query: spec });
       onSaved();
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   };
@@ -49,23 +53,20 @@ export function SetupPage({ setup, onSaved }: { setup: SetupState | null; onSave
       <form className="setup" onSubmit={(e) => { e.preventDefault(); save(); }}>
         <label htmlFor="cap">Privacy budget (cap)</label>
         <input id="cap" type="number" min="0" step="any" value={cap} onChange={(e) => setCap(e.target.value)} />
-        <label htmlFor="eps">ε per query</label>
-        <input id="eps" type="number" min="0" step="any" value={eps} onChange={(e) => setEps(e.target.value)} />
-        <label htmlFor="teams">Teams</label>
+        <label htmlFor="teams">Teams in Exp 1 and 2</label>
         <select id="teams" value={teams} onChange={(e) => setTeams(Number(e.target.value))}>
-          {Array.from({ length: available }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+          {Array.from({ length: Math.max(0, available - 1) }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
+        <span className="span2 setlabel">Standard question for the runs</span>
+        <div className="span2"><QuestionBuilder spec={spec} onChange={setSpec} /></div>
+        <div className="span2"><PriceTag price={price} error={priceError} /></div>
         <div className="formfoot">
           <button type="submit" disabled={busy || !valid}>{current ? "Save" : "Start"}</button>
-          {valid && !breach && (
-            <span className="pill warn">
-              {teams < 2 ? "Naive cannot overshoot with one team: nothing races" : "Naive cannot overshoot with these values: each round fits the cap exactly"}
-            </span>
-          )}
+          {valid && !breach && <span className="pill warn">Naive cannot overshoot with these values: each round fits the cap exactly</span>}
         </div>
       </form>
       {error && <p className="err" role="alert">{error}</p>}
-      {current && <p className="foot">Set by {current.updated_by ?? "-"} at {clock(current.updated_at)}.</p>}
+      {current && <p className="foot">Set by {current.updated_by ?? "-"} at {clock(current.updated_at)}. The shared dataset is used by {current.shared_teams.join(" and ")}; a new cap starts a new shared budget.</p>}
     </>
   );
 }
