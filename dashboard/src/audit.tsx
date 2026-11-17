@@ -57,7 +57,7 @@ export function Access({ own = false }: { own?: boolean }) {
           </button>
         ))}
       </div>}
-      <div className="scroll">
+      <div className="panel scroll">
         <table className="compact">
           <thead><tr><th>When</th><th>Who</th><th>Role</th><th>Action</th><th>On</th><th>Result</th></tr></thead>
           <tbody>
@@ -94,7 +94,7 @@ export function Ledger({ me }: { me: Me }) {
           : <span className="pill bad big">Broken at row {res.seq}: {res.reason}</span>)}
       </div>
       {(error || fail) && <p className="err" role="alert">{error ?? fail}</p>}
-      <div className="scroll">
+      <div className="panel scroll">
         <table className="compact">
           <thead><tr><th className="r">Row</th><th>When</th><th>Change</th><th>Status</th><th>Strategy</th><th>Actor</th><th>Settled by</th><th>Hash</th></tr></thead>
           <tbody>

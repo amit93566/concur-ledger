@@ -70,7 +70,7 @@ function BurstTable({ rows, title }: { rows: Burst[]; title: string }) {
   return (
     <div className="scroll">
       <table className="compact">
-        <caption>{title}</caption>
+        <caption className="subcap">{title}</caption>
         <thead><tr><th>Start</th><th className="r">N at once</th><th className="r">Room for</th>{strategies.map((s) => <th key={s}><i className={`sw sw-${s}`} />{s}</th>)}</tr></thead>
         <tbody>
           {keys.map((k) => {
@@ -117,14 +117,12 @@ function Exp3({ panels, cal }: { panels: Panel[]; cal: Calibration | null }) {
         </select>
         <MetricSelect value={metric} onChange={(k) => setMetric(k as MKey)} keys={Object.keys(MEASURED)} />
       </div>
+      <Legend strategies={strategies} />
       {panel.duration_ms === 14000 && cal && (
         <Chips items={[`14 s = one DP-SGD epoch (median ${cal.epoch_s_median.toFixed(1)} s)`, `ε ${cal.epsilon} at δ ${cal.delta}`, `accuracy ${(cal.accuracy_median * 100).toFixed(1)}%`]} />
       )}
-      <div className="charts one">
-        <div>
-          <Legend strategies={strategies} />
-          <LineChart series={series} title={`${m.label} · ${panel.title}`} unit={m.unit} />
-        </div>
+      <div className="charts stack">
+        <LineChart series={series} title={`${m.label} · ${panel.title}`} unit={m.unit} />
         <div className="scroll">
           <table className="compact">
             <thead><tr><th>Strategy</th>{ns.map((n) => <th className="r" key={n}>N={n}</th>)}</tr></thead>
@@ -160,33 +158,41 @@ export function ResultsPage() {
   return (
     <>
       <header className="pagehead"><h1>Results</h1></header>
-      <h2>Exp 1 vs Exp 2 · this session</h2>
-      <Session />
+      <section className="panel">
+        <h2>Exp 1 vs Exp 2 · this session</h2>
+        <Session />
+      </section>
       {error && <p className="err" role="alert">{error}</p>}
       {data && (
         <>
           {data.exp12 && data.exp12.length > 0 && (
             <>
-              <h2>Exp 1 vs Exp 2 · measured</h2>
-              <BurstTable rows={data.exp12} title="All requests at once, near the cap" />
-              {data.cap100 && data.cap100.length > 0 && <BurstTable rows={data.cap100} title="The same at cap 100" />}
+              <section className="panel">
+                <h2>Exp 1 vs Exp 2 · measured</h2>
+                <BurstTable rows={data.exp12} title="All requests at once, near the cap" />
+                {data.cap100 && data.cap100.length > 0 && <BurstTable rows={data.cap100} title="The same at cap 100" />}
+              </section>
             </>
           )}
-          <h2>Exp 3 · throughput and latency · measured</h2>
-          <Exp3 panels={data.panels} cal={data.calibration} />
+          <section className="panel measured">
+            <h2>Exp 3 · throughput and latency · measured</h2>
+            <Exp3 panels={data.panels} cal={data.calibration} />
+          </section>
           {data.exp4 && data.exp4.length > 0 && (
             <>
+              <section className="panel">
               <h2>Exp 4 · crash checks · measured</h2>
               <div className="scroll">
                 <table className="compact">
                   <thead><tr><th>Fault</th><th className="r">Checks passed</th></tr></thead>
                   <tbody>
                     {data.exp4.map((r) => (
-                      <tr key={r.label}><td>{r.label}</td><td className={`r mono ${r.passed < r.checks ? "badtext" : ""}`}>{r.passed} / {r.checks}</td></tr>
+                      <tr key={r.label}><td>{r.label}</td><td className="r"><span className={`pill ${r.passed < r.checks ? "bad" : "good"}`}>{r.passed} / {r.checks}</span></td></tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              </section>
             </>
           )}
         </>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Me, Round, RunDetail, SetupState, TeamShot, api, clock, fmt, isTeam } from "./api";
-import { Budget, RunControls, RunPicker, SetupChips, StatusPill, Waiting, useRuns } from "./common";
+import { Budget, RunControls, RunPicker, SetupChips, StatusPill, Waiting, Workspace, useRuns } from "./common";
 import { MyShare } from "./team";
 
 // Exp 1 (naive) and Exp 2 (a safe strategy): every team reserves at the same
@@ -68,10 +68,10 @@ function RunView({ run, owner }: { run: RunDetail; owner: boolean }) {
         <span className="meta">{run.strategy} · started by {run.started_by ?? "-"} at {clock(run.started_at)} · {granted} granted in {rounds.length} rounds</span>
         {owner && run.params.query !== undefined && <Truth spec={run.params.query} />}
       </div>
-      {run.dataset && <Budget d={run.dataset} inv={run.invariants} />}
+      <Workspace rail={run.dataset && <Budget d={run.dataset} inv={run.invariants} />}>
       {rounds.length > 0 && (
-        <div className="split">
-          <div className="scroll">
+        <>
+          <section className="panel scroll">
             <table className="compact">
               <thead><tr><th className="r">Round</th><th className="r">Granted</th><th className="r">Denied</th><th className="r">Total after</th><th className="r">Arrived within</th></tr></thead>
               <tbody>
@@ -86,15 +86,16 @@ function RunView({ run, owner }: { run: RunDetail; owner: boolean }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
           {shown && (
-            <div>
-              <h3>Round {shown.round}{shown.round === breachAt ? " · breach" : ""}</h3>
+            <section className="panel">
+              <h2>Round {shown.round}{shown.round === breachAt ? " · breach" : ""}</h2>
               <Trace strategy={run.strategy} cap={cap} eps={eps} round={shown} />
-            </div>
+            </section>
           )}
-        </div>
+        </>
       )}
+      </Workspace>
     </>
   );
 }

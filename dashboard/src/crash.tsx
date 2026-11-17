@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Dataset, Hold, Invariants, Me, RunDetail, SetupState, api, clock, fmt, isTeam, message, usePoll } from "./api";
-import { Budget, RunControls, RunPicker, SetupChips, StatusPill, Waiting, useRuns } from "./common";
+import { Budget, RunControls, RunPicker, SetupChips, StatusPill, Waiting, Workspace, useRuns } from "./common";
 import { MyShare } from "./team";
 
 // Exp 4: teams run 3 s jobs back to back; someone kills and restarts the app
@@ -33,7 +33,7 @@ function save(id: string, snap: Snap | null) {
 
 const count = (inv: Invariants, k: string) => inv.status_counts[k] ?? 0;
 
-function Compare({ before, run }: { before: Snap; run: RunDetail }) {
+function Compare({ before, run, onClear }: { before: Snap; run: RunDetail; onClear: () => void }) {
   const d = run.dataset!, inv = run.invariants!;
   const rows: [string, string, string][] = [
     ["Spent", fmt(before.d.epsilon_spent), fmt(d.epsilon_spent)],
@@ -48,7 +48,7 @@ function Compare({ before, run }: { before: Snap; run: RunDetail }) {
   ];
   return (
     <section className="panel">
-      <h3>Before and after the restart</h3>
+      <h2>Before and after the restart</h2>
       <div className="split">
         <table className="compact">
           <thead><tr><th /><th className="r">Last seen · {clock(new Date(before.at).toISOString())}</th><th className="r">Now</th></tr></thead>
@@ -57,6 +57,7 @@ function Compare({ before, run }: { before: Snap; run: RunDetail }) {
         <ul className="checks">
           {checks.map(([ok, text]) => <li key={text} className={ok ? "ok" : "no"}>{ok ? "✓" : "✗"} {text}</li>)}
           <li className="info">{count(inv, "reserved")} in-flight jobs left as holds</li>
+          <li><button className="link" onClick={onClear}>Clear comparison</button></li>
         </ul>
       </div>
     </section>
@@ -75,7 +76,7 @@ function Holds({ me, datasetId }: { me: Me; datasetId: string }) {
   };
   return (
     <section className="panel">
-      <h3>Holds left behind · {holds.length}</h3>
+      <h2>Holds left behind · {holds.length}</h2>
       {error && <p className="err" role="alert">{error}</p>}
       <div className="scroll">
         <table className="compact">
@@ -155,10 +156,10 @@ export function CrashPage({ me, setup, outage }: { me: Me; setup: SetupState | n
                 <span className="meta">{detail.mode === "abort" ? "controlled abort" : "work"} · started by {detail.started_by ?? "-"} at {clock(detail.started_at)}{detail.finished_at && detail.status === "interrupted" ? ` · service back at ${clock(detail.finished_at)}` : ""}</span>
               </div>
               {isTeam(me) && <MyShare me={me} datasetId={detail.dataset_id} />}
-              {detail.dataset && <Budget d={detail.dataset} inv={detail.invariants} />}
-              {before && detail.dataset && detail.invariants && !outage.down && <Compare before={before} run={detail} />}
-              {before && !outage.down && <button className="link" onClick={() => { if (id) save(id, null); setBefore(null); }}>Clear comparison</button>}
-              {detail.dataset_id && <Holds me={me} datasetId={detail.dataset_id} />}
+              <Workspace rail={detail.dataset && <Budget d={detail.dataset} inv={detail.invariants} />}>
+                {before && detail.dataset && detail.invariants && !outage.down && <Compare before={before} run={detail} onClear={() => { if (id) save(id, null); setBefore(null); }} />}
+                {detail.dataset_id && <Holds me={me} datasetId={detail.dataset_id} />}
+              </Workspace>
             </>
           )}
           {!detail && runs.length === 0 && <p className="empty">No runs yet.</p>}

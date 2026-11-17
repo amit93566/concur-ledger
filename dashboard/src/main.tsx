@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, Me, SetupState, api, hasKey, isTeam, setKey, usePoll } from "./api";
 import { AuditPage } from "./audit";
+import { Chevron } from "./common";
 import { BurnDownPage } from "./burndown";
 import { CrashPage, Outage } from "./crash";
 import { ResultsPage } from "./results";
@@ -10,6 +11,10 @@ import { SetupPage } from "./setup";
 import { SharedPage } from "./shared";
 import { SweepPage } from "./sweep";
 import { MyTeamPage } from "./team";
+import "@fontsource-variable/inter";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
 import "./style.css";
 
 type Page = "shared" | "exp1" | "exp2" | "exp3" | "exp4" | "team" | "audit" | "results" | "burn" | "setup";
@@ -25,6 +30,8 @@ function SignIn({ onDone, message }: { onDone: () => void; message: string | nul
   const [value, setValue] = useState("");
   return (
     <main className="signin">
+      <div>
+      <div className="brand">concur-ledger</div>
       <h1>concur-ledger Console</h1>
       <p>Enter an API key. What you can do here depends on its role.</p>
       <form
@@ -39,6 +46,7 @@ function SignIn({ onDone, message }: { onDone: () => void; message: string | nul
         <button type="submit" disabled={!value.trim()}>Sign in</button>
       </form>
       {message && <p className="err" role="alert">{message}</p>}
+      </div>
     </main>
   );
 }
@@ -130,7 +138,7 @@ function App() {
     return () => clearTimeout(id);
   }, [down, attempt]);
 
-  if (down && !me) return <main className="signin"><h1>concur-ledger Console</h1><p className="err" role="alert">The service is not responding. Retrying.</p></main>;
+  if (down && !me) return <main className="signin"><div><div className="brand">concur-ledger</div><h1>concur-ledger Console</h1><p className="err" role="alert">The service is not responding. Retrying.</p></div></main>;
   if (signIn !== false) return <SignIn message={signIn} onDone={() => setAttempt((a) => a + 1)} />;
   if (!me) return null;
 
@@ -154,7 +162,7 @@ function App() {
         <div className="brand">concur-ledger</div>
         <nav aria-label="Pages">
           {item("shared", "Shared dataset")}
-          <button className="group" aria-expanded={expOpen} onClick={() => setExpOpen(!expOpen)}>Experiments <span aria-hidden="true">{expOpen ? "▾" : "▸"}</span></button>
+          <button className="group" aria-expanded={expOpen} onClick={() => setExpOpen(!expOpen)}>Experiments <Chevron /></button>
           {expOpen && <div className="sub">{EXPERIMENTS.map(([p, label]) => item(p, label))}</div>}
           {team ? item("team", "My team") : item("audit", "Audit logs")}
           {item("results", "Results")}

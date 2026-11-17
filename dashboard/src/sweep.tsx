@@ -57,12 +57,13 @@ export function SweepPage({ me }: { me: Me }) {
             <StatusPill run={detail} />
             <span className="meta">started by {detail.started_by ?? "-"} at {clock(detail.started_at)} · {cells.length} of {strategies.length * ns.length} points</span>
           </div>
-          <MetricSelect value={metric} onChange={(k) => setMetric(k as Metric)} keys={Object.keys(METRICS)} />
-          <div className="charts one">
-            <div>
-              <Legend strategies={strategies} />
-              <LineChart series={series} title={m.label} unit={m.unit} />
-            </div>
+          <section className="panel">
+          <div className="panelhead">
+            <MetricSelect value={metric} onChange={(k) => setMetric(k as Metric)} keys={Object.keys(METRICS)} />
+            <Legend strategies={strategies} />
+          </div>
+          <div className="charts">
+            <LineChart series={series} title={m.label} unit={m.unit} />
             <div className="scroll">
               <table className="compact">
                 <thead><tr><th>Strategy</th>{ns.map((n) => <th className="r" key={n}>N={n}</th>)}</tr></thead>
@@ -81,6 +82,7 @@ export function SweepPage({ me }: { me: Me }) {
               </table>
             </div>
           </div>
+          </section>
         </>
       )}
       {!detail && runs.length === 0 && <p className="empty">No runs yet.</p>}

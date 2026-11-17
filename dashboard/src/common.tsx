@@ -13,6 +13,24 @@ export const STRATEGY_LABEL: Record<string, string> = {
 /** True when this login may start runs: a team (analyst), or anyone with RBAC off. */
 export const canStart = (me: Me) => !me.rbac_enabled || me.role === "analyst";
 
+export function Chevron() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+/** The two-column page body: the page's own content, and a narrow rail (the budget). */
+export function Workspace({ children, rail }: { children: ReactNode; rail: ReactNode }) {
+  return (
+    <div className="workspace">
+      <div>{children}</div>
+      <aside className="rail">{rail}</aside>
+    </div>
+  );
+}
+
 export function Chips({ items }: { items: (string | null | false)[] }) {
   return <p className="chips">{items.filter(Boolean).map((t) => <span className="chip mono" key={String(t)}>{t}</span>)}</p>;
 }
@@ -57,22 +75,28 @@ export function Budget({ d, inv }: { d: Dataset; inv: Invariants | null }) {
   const cap = d.epsilon_cap;
   const zoomFrom = cap * 0.9;
   const over = d.total > cap;
+  const check = (ok: boolean, text: string) => (
+    <li key={text} className={ok ? "ok" : "no"}><span className="ic" aria-hidden="true">{ok ? "✓" : "✕"}</span><span>{text}</span></li>
+  );
   return (
-    <div className="budget">
-      <p className="mono nums-line">
-        <span className="dsname">{d.name}</span> spent {fmt(d.epsilon_spent)} + held {fmt(d.epsilon_reserved)} = <b>{fmt(d.total)}</b> / {fmt(cap)}{" "}
+    <section className="panel budget">
+      <h2>Budget</h2>
+      <p className="dsname">{d.name}</p>
+      <p className="total">
+        <span><b>{fmt(d.total)}</b> <span className="of">/ {fmt(cap)}</span></span>
         {over ? <span className="pill bad">Breached by {fmt(d.total - cap)}</span> : <span className="pill good">Within cap</span>}
       </p>
       <Meter d={d} lo={0} hi={Math.max(cap, d.total)} label="Budget" />
       {d.total >= zoomFrom && <Meter d={d} lo={zoomFrom} hi={Math.ceil(Math.max(cap + (cap - zoomFrom), d.total * 1.02))} label="Zoom" />}
+      <p className="mono nums-line">spent {fmt(d.epsilon_spent)} + held {fmt(d.epsilon_reserved)} = {fmt(d.total)} / {fmt(cap)}</p>
       {inv && (
-        <p className="pills">
-          <span className={`pill ${inv.i1_cap_safety ? "good" : "bad"}`}>I1 cap {inv.i1_cap_safety ? "holds" : "broken"}</span>
-          <span className={`pill ${inv.i2_ledger_agreement ? "good" : "bad"}`}>I2 ledger {inv.i2_ledger_agreement ? "agrees" : "disagrees"}</span>
-          {Object.entries(inv.status_counts).map(([k, v]) => <span className="pill" key={k}>{k} {v}</span>)}
-        </p>
+        <ul className="invs">
+          {check(inv.i1_cap_safety, `I1 cap ${inv.i1_cap_safety ? "holds" : "broken"}`)}
+          {check(inv.i2_ledger_agreement, `I2 ledger ${inv.i2_ledger_agreement ? "agrees" : "disagrees"}`)}
+          {Object.entries(inv.status_counts).map(([k, v]) => <li className="n" key={k}><span className="ic" aria-hidden="true" /><span>{k} {v}</span></li>)}
+        </ul>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -165,7 +189,7 @@ export function LineChart({ series, title, unit }: { series: Series; title: stri
   const ticks = Array.from({ length: Math.floor(top / unitStep) + 1 }, (_, i) => i * unitStep);
   return (
     <figure className="chart">
-      <figcaption>{title}</figcaption>
+      <figcaption>{title} <small>{unit}</small></figcaption>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title} against N`} onMouseLeave={() => setHover(null)}>
         {ticks.map((t) => (
           <g key={t}>

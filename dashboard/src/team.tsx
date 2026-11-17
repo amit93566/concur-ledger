@@ -33,6 +33,7 @@ export function MyTeamPage({ me }: { me: Me }) {
   return (
     <>
       <header className="pagehead"><h1>{me.name}</h1></header>
+      <section className="panel">
       <h2>Budget received</h2>
       {error && <p className="err" role="alert">{error}</p>}
       {data && rows.length === 0 ? <p className="empty">Nothing yet.</p> : (
@@ -44,7 +45,7 @@ export function MyTeamPage({ me }: { me: Me }) {
             <tbody>
               {rows.map((u) => (
                 <tr key={u.dataset_id}>
-                  <td>{runLabel(u)}</td>
+                  <td><b>{runLabel(u)}</b></td>
                   <td className="mono">{u.dataset}</td>
                   <td className="r mono">{u.granted}</td>
                   <td className="r mono">{u.denied}</td>
@@ -58,10 +59,13 @@ export function MyTeamPage({ me }: { me: Me }) {
           </table>
         </div>
       )}
+      </section>
+      <div className="loghead">
       <h2>Log</h2>
       <div className="seg" role="tablist">
         <button role="tab" aria-selected={tab === "access"} className={tab === "access" ? "on" : ""} onClick={() => setTab("access")}>Access</button>
         <button role="tab" aria-selected={tab === "ledger"} className={tab === "ledger" ? "on" : ""} onClick={() => setTab("ledger")}>Ledger changes</button>
+      </div>
       </div>
       {tab === "access" ? <Access own /> : <Ledger me={me} />}
     </>

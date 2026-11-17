@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Catalog, Dataset, Invariants, LedgerRecord, Me, OwnerAnswer, Price, SetupState, Spec, Usage, call, clock, fmt, message, usePoll } from "./api";
-import { Budget, Chips, Waiting } from "./common";
+import { Budget, Chevron, Chips, Waiting, Workspace } from "./common";
 
 // The Shared dataset: team-1 and team-2 ask their own questions of the UCI
 // Adult data, against one budget. OpenDP prices each question before it is
@@ -133,21 +133,21 @@ function Ask({ me, datasetId }: { me: Me; datasetId: string }) {
         )}
       </section>
       {answers.length > 0 && (
-        <div className="scroll">
+        <section className="panel scroll">
           <table className="compact">
             <caption>Your answers</caption>
             <thead><tr><th>When</th><th>Question</th><th className="r">Answer</th><th className="r">ε</th></tr></thead>
             <tbody>
               {answers.map((a) => (
                 <tr key={a.id}>
-                  <td className="mono">{clock(a.at)}</td><td>{a.question}</td>
+                  <td className="mono">{clock(a.at)}</td><td className="wrap">{a.question}</td>
                   <td className="r mono">{a.status === "answered" ? fmt(a.answer ?? 0) : <span className="pill bad">denied</span>}</td>
                   <td className="r mono">{a.status === "answered" ? fmt(a.epsilon) : "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
     </>
   );
@@ -157,7 +157,7 @@ function Ask({ me, datasetId }: { me: Me; datasetId: string }) {
 function DatasetCard({ cat }: { cat: Catalog }) {
   return (
     <details className="card">
-      <summary><b>About the data</b> <span className="meta">{cat.dataset} · {cat.rows.toLocaleString()} people · {cat.schema.length} columns · {cat.license}</span></summary>
+      <summary><b>About the data</b><Chevron /><span className="meta">{cat.dataset} · {cat.rows.toLocaleString()} people · {cat.schema.length} columns · {cat.license}</span></summary>
       <div className="scroll">
         <table className="compact">
           <thead><tr><th>Column</th><th>Type</th><th>Values</th></tr></thead>
@@ -173,16 +173,16 @@ function DatasetCard({ cat }: { cat: Catalog }) {
 function OwnerAnswers({ datasetId }: { datasetId: string }) {
   const { data } = usePoll<OwnerAnswer[]>(`/adult/answers?dataset_id=${datasetId}&limit=50`, 1500);
   return (
-    <div className="scroll">
+    <section className="panel scroll">
       <table className="compact">
         <caption>Questions asked <span className="pill">true value: owner only</span></caption>
-        <thead><tr><th>When</th><th>Team</th><th>Question</th><th className="r">Answer given</th><th className="r">True value</th><th className="r">Noise</th><th>Within promise</th></tr></thead>
+        <thead><tr><th>Question</th><th className="r">Answer given</th><th className="r">True value</th><th className="r">Noise</th><th>Within promise</th></tr></thead>
         <tbody>
           {(data ?? []).map((a) => {
             const err = a.answer !== null && a.truth !== null ? a.answer - a.truth : null;
             return (
               <tr key={a.id}>
-                <td className="mono">{clock(a.at)}</td><td>{a.team ?? "-"}</td><td>{a.question}</td>
+                <td className="wrap">{a.question}<div className="sub2"><b>{a.team ?? "-"}</b> · <span className="mono">{clock(a.at)}</span></div></td>
                 <td className="r mono">{a.status === "denied" ? <span className="pill bad">denied</span> : a.answer === null ? "-" : fmt(a.answer)}</td>
                 <td className="r mono">{a.truth === null ? "-" : fmt(a.truth)}</td>
                 <td className="r mono">{err === null ? "-" : `${err >= 0 ? "+" : ""}${fmt(Math.round(err * 10) / 10)}`}</td>
@@ -192,10 +192,10 @@ function OwnerAnswers({ datasetId }: { datasetId: string }) {
               </tr>
             );
           })}
-          {data?.length === 0 && <tr><td colSpan={7}>No questions yet.</td></tr>}
+          {data?.length === 0 && <tr><td colSpan={5}>No questions yet.</td></tr>}
         </tbody>
       </table>
-    </div>
+    </section>
   );
 }
 
@@ -203,40 +203,43 @@ function Watch({ datasetId, owner }: { datasetId: string; owner: boolean }) {
   const usage = usePoll<Usage[]>("/demo/usage", 1500);
   const rec = usePoll<LedgerRecord[]>(owner ? null : `/datasets/${datasetId}/activity?limit=50`, 1500);
   const teams = (usage.data ?? []).filter((u) => u.dataset_id === datasetId);
+  const spending = teams.length > 0 && (
+    <section className="panel scroll">
+      <table className="compact">
+        <caption>Spending by team</caption>
+        <thead><tr><th>Team</th><th className="r">Answered</th><th className="r">Denied</th><th className="r">ε spent</th><th className="r">Share of cap</th></tr></thead>
+        <tbody>
+          {teams.map((u) => (
+            <tr key={u.team}>
+              <td>{u.team}</td><td className="r mono">{u.granted}</td><td className="r mono">{u.denied}</td>
+              <td className="r mono">{fmt(u.eps_spent)}</td><td className="r mono">{fmt(Math.round((u.eps_spent / u.epsilon_cap) * 1000) / 10)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
   return (
     <>
-      {teams.length > 0 && (
-        <div className="scroll">
+      {owner ? <OwnerAnswers datasetId={datasetId} /> : (
+        <section className="panel scroll">
           <table className="compact">
-            <caption>Spending by team</caption>
-            <thead><tr><th>Team</th><th className="r">Answered</th><th className="r">Denied</th><th className="r">ε spent</th><th className="r">Share of cap</th></tr></thead>
+            <caption>Questions asked</caption>
+            <thead><tr><th>Question</th><th>Result</th><th className="r">ε</th></tr></thead>
             <tbody>
-              {teams.map((u) => (
-                <tr key={u.team}>
-                  <td>{u.team}</td><td className="r mono">{u.granted}</td><td className="r mono">{u.denied}</td>
-                  <td className="r mono">{fmt(u.eps_spent)}</td><td className="r mono">{fmt(Math.round((u.eps_spent / u.epsilon_cap) * 1000) / 10)}%</td>
+              {(rec.data ?? []).map((r) => (
+                <tr key={r.id}>
+                  <td className="wrap">{r.job_id}<div className="sub2"><b>{r.actor ?? "-"}</b> · <span className="mono">{clock(r.reserved_at)}</span></div></td>
+                  <td>{r.status === "committed" ? <span className="pill good">answered</span> : r.status === "denied" ? <span className="pill bad">denied</span> : <span className="pill">{r.status}</span>}</td>
+                  <td className="r mono">{r.epsilon_committed === null ? "-" : fmt(r.epsilon_committed)}</td>
                 </tr>
               ))}
+              {rec.data?.length === 0 && <tr><td colSpan={3}>No questions yet.</td></tr>}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
-      {owner ? <OwnerAnswers datasetId={datasetId} /> : <div className="scroll">
-        <table className="compact">
-          <caption>Questions asked</caption>
-          <thead><tr><th>When</th><th>Team</th><th>Question</th><th>Result</th><th className="r">ε</th></tr></thead>
-          <tbody>
-            {(rec.data ?? []).map((r) => (
-              <tr key={r.id}>
-                <td className="mono">{clock(r.reserved_at)}</td><td>{r.actor ?? "-"}</td><td>{r.job_id}</td>
-                <td>{r.status === "committed" ? <span className="pill good">answered</span> : r.status === "denied" ? <span className="pill bad">denied</span> : <span className="pill">{r.status}</span>}</td>
-                <td className="r mono">{r.epsilon_committed === null ? "-" : fmt(r.epsilon_committed)}</td>
-              </tr>
-            ))}
-            {rec.data?.length === 0 && <tr><td colSpan={5}>No questions yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>}
+      {spending}
     </>
   );
 }
@@ -256,11 +259,9 @@ export function SharedPage({ me, setup }: { me: Me; setup: SetupState | null }) 
         {s && <Chips items={[`${cat?.dataset ?? "UCI Adult"} · ${cat ? cat.rows.toLocaleString() : "-"} people`, `cap ${fmt(s.epsilon_cap)}`, `shared by ${s.shared_teams.join(" and ")}`]} />}
       </header>
       {setup && !s ? <Waiting /> : id && (
-        <>
-          {cat && <DatasetCard cat={cat} />}
-          {ds.data && <Budget d={ds.data} inv={inv.data} />}
+        <Workspace rail={<>{ds.data && <Budget d={ds.data} inv={inv.data} />}{cat && <DatasetCard cat={cat} />}</>}>
           {sharer ? <Ask me={me} datasetId={id} /> : <Watch datasetId={id} owner={!me.rbac_enabled || me.role === "admin"} />}
-        </>
+        </Workspace>
       )}
     </>
   );

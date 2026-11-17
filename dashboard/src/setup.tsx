@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { SetupState, Spec, api, clock, message } from "./api";
+import { Workspace } from "./common";
 import { DEFAULT_SPEC, PriceTag, QuestionBuilder, usePrice } from "./shared";
 
 // The admin's choices: the cap (the shared Adult budget, and each run's), the
@@ -51,22 +52,27 @@ export function SetupPage({ setup, onSaved }: { setup: SetupState | null; onSave
     <>
       <header className="pagehead"><h1>Setup</h1></header>
       <form className="setup" onSubmit={(e) => { e.preventDefault(); save(); }}>
-        <label htmlFor="cap">Privacy budget (cap)</label>
-        <input id="cap" type="number" min="0" step="any" value={cap} onChange={(e) => setCap(e.target.value)} />
-        <label htmlFor="teams">Teams in Exp 1 and 2</label>
-        <select id="teams" value={teams} onChange={(e) => setTeams(Number(e.target.value))}>
-          {Array.from({ length: Math.max(0, available - 1) }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <span className="span2 setlabel">Standard question for the runs</span>
-        <div className="span2"><QuestionBuilder spec={spec} onChange={setSpec} /></div>
-        <div className="span2"><PriceTag price={price} error={priceError} /></div>
-        <div className="formfoot">
-          <button type="submit" disabled={busy || !valid}>{current ? "Save" : "Start"}</button>
-          {valid && !breach && <span className="pill warn">Naive cannot overshoot with these values: each round fits the cap exactly</span>}
-        </div>
+        <Workspace rail={<section className="panel"><h2>Price</h2><PriceTag price={price} error={priceError} /></section>}>
+          <section className="panel">
+            <div className="fields">
+              <label htmlFor="cap">Privacy budget (cap)<input id="cap" type="number" min="0" step="any" value={cap} onChange={(e) => setCap(e.target.value)} /></label>
+              <label htmlFor="teams">Teams in Exp 1 and 2
+                <select id="teams" value={teams} onChange={(e) => setTeams(Number(e.target.value))}>
+                  {Array.from({ length: Math.max(0, available - 1) }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </div>
+            <h3 className="setlabel">Standard question for the runs</h3>
+            <QuestionBuilder spec={spec} onChange={setSpec} />
+            <div className="formfoot">
+              <button type="submit" disabled={busy || !valid}>{current ? "Save" : "Start"}</button>
+              {valid && !breach && <span className="pill warn">Naive cannot overshoot with these values: each round fits the cap exactly</span>}
+            </div>
+          </section>
+          {current && <p className="foot">Set by {current.updated_by ?? "-"} at {clock(current.updated_at)}. The shared dataset is used by {current.shared_teams.join(" and ")}; a new cap starts a new shared budget.</p>}
+        </Workspace>
       </form>
       {error && <p className="err" role="alert">{error}</p>}
-      {current && <p className="foot">Set by {current.updated_by ?? "-"} at {clock(current.updated_at)}. The shared dataset is used by {current.shared_teams.join(" and ")}; a new cap starts a new shared budget.</p>}
     </>
   );
 }
