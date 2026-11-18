@@ -76,18 +76,19 @@ export function PriceTag({ price, error }: { price: Price | null; error: string 
 
 type Answer = { id: string; at: string; question: string; answer: number | null; epsilon: number; status: "answered" | "denied"; left?: number };
 
-const store = (team: string) => `concur-ledger-answers-${team}`;
-function loadAnswers(team: string): Answer[] {
-  try { return JSON.parse(sessionStorage.getItem(store(team)) ?? "[]"); } catch { return []; }
+// Per team and per shared budget: a new cap starts a new budget, and an empty list.
+const store = (team: string, datasetId: string) => `concur-ledger-answers-${team}-${datasetId}`;
+function loadAnswers(team: string, datasetId: string): Answer[] {
+  try { return JSON.parse(sessionStorage.getItem(store(team, datasetId)) ?? "[]"); } catch { return []; }
 }
-function saveAnswers(team: string, list: Answer[]) {
-  try { sessionStorage.setItem(store(team), JSON.stringify(list)); } catch { /* kept until reload */ }
+function saveAnswers(team: string, datasetId: string, list: Answer[]) {
+  try { sessionStorage.setItem(store(team, datasetId), JSON.stringify(list)); } catch { /* kept until reload */ }
 }
 
 function Ask({ me, datasetId }: { me: Me; datasetId: string }) {
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
   const { price, error } = usePrice(spec);
-  const [answers, setAnswers] = useState<Answer[]>(() => loadAnswers(me.name ?? "team"));
+  const [answers, setAnswers] = useState<Answer[]>(() => loadAnswers(me.name ?? "team", datasetId));
   const [busy, setBusy] = useState(false);
   const [fail, setFail] = useState<string | null>(null);
 
@@ -111,7 +112,7 @@ function Ask({ me, datasetId }: { me: Me; datasetId: string }) {
       if (entry) {
         const next = [entry, ...answers];
         setAnswers(next);
-        saveAnswers(me.name ?? "team", next);
+        saveAnswers(me.name ?? "team", datasetId, next);
       }
     } catch (e) { setFail(message(e)); } finally { setBusy(false); }
   };
@@ -260,7 +261,7 @@ export function SharedPage({ me, setup }: { me: Me; setup: SetupState | null }) 
       </header>
       {setup && !s ? <Waiting /> : id && (
         <Workspace rail={<>{ds.data && <Budget d={ds.data} inv={inv.data} />}{cat && <DatasetCard cat={cat} />}</>}>
-          {sharer ? <Ask me={me} datasetId={id} /> : <Watch datasetId={id} owner={!me.rbac_enabled || me.role === "admin"} />}
+          {sharer ? <Ask key={id} me={me} datasetId={id} /> : <Watch datasetId={id} owner={!me.rbac_enabled || me.role === "admin"} />}
         </Workspace>
       )}
     </>
