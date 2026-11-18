@@ -10,11 +10,19 @@ sensitivity; the Laplace scale is that sensitivity times the level's factor;
 the measurement reports epsilon (`map`), and OpenDP's accuracy helper reports
 the 95% error bound. Nothing here computes a privacy quantity itself.
 
-    level      scale            epsilon   count error (95%)
-    high       0.5 x sens       2         +-1.5
-    medium     1   x sens       1         +-3
-    low        2   x sens       0.5       +-6
-    very_low   5   x sens       0.2       +-15
+A count is an integer, so OpenDP adds discrete Laplace noise and every error is
+a whole number. Its bound comes from OpenDP's discrete helper, rounded down to
+a whole number: an integer error is within t exactly when it is within floor(t),
+so rounding down keeps the 95% guarantee and drops the fraction. (The continuous
+formula, scale x ln 20, gives +-1.5 at high and +-5.99 at low; the second
+covers only 93.8%, because an error of exactly 6 falls outside it.) A sum runs
+on floats with continuous Laplace noise and keeps the continuous helper.
+
+    level      scale            epsilon   count error (95%)   coverage
+    high       0.5 x sens       2         +-1                 96.8%
+    medium     1   x sens       1         +-3                 97.3%
+    low        2   x sens       0.5       +-6                 96.2%
+    very_low   5   x sens       0.2       +-15                95.5%
 
 The filter runs before OpenDP. Keeping or dropping each person by their own
 row is 1-stable under the symmetric distance, so it does not change what one
@@ -27,6 +35,7 @@ adapter.
 """
 
 import asyncio
+import math
 from decimal import ROUND_CEILING, Decimal
 from typing import Any, Callable
 
@@ -157,10 +166,15 @@ def price(spec: dict[str, Any]) -> dict[str, Any]:
     """What a question costs and how accurate its answer is, before asking."""
     meas, scale = build(spec)
     dp = _opendp()
+    if parse(spec)[0] == "count":
+        # Whole-number errors: the largest whole number within OpenDP's bound.
+        accuracy: float = math.floor(dp.discrete_laplacian_scale_to_accuracy(scale, 1 - CONFIDENCE))
+    else:
+        accuracy = round(dp.laplacian_scale_to_accuracy(scale, 1 - CONFIDENCE), 2)
     return {
         "question": label(spec),
         "epsilon": float(Decimal(str(meas.map(1))).quantize(_QUANTUM, rounding=ROUND_CEILING)),
-        "accuracy": round(dp.laplacian_scale_to_accuracy(scale, 1 - CONFIDENCE), 2),
+        "accuracy": accuracy,
         "confidence": CONFIDENCE,
         "scale": scale,
     }
